@@ -1163,7 +1163,9 @@ def scheduling_admin_summary(x_session_token: str | None = Header(default=None))
     }
 
 @app.get("/api/scheduling/areas")
-def list_service_areas(include_inactive: bool = False):
+def list_service_areas(include_inactive: bool = False, x_session_token: str | None = Header(default=None)):
+    staff=require_permission("orders",x_session_token)
+    operational_scope(staff)
     if not DATABASE_URL: return {"areas": []}
     with db() as conn:
         rows = conn.execute("SELECT * FROM service_areas ORDER BY name").fetchall() if include_inactive else conn.execute("SELECT * FROM service_areas WHERE active=TRUE ORDER BY name").fetchall()
@@ -1193,7 +1195,9 @@ def update_service_area(area_id: str, payload: dict, x_session_token: str | None
     out=dict(row); out["postal_codes"]=list(out.get("postal_codes") or []); return out
 
 @app.get("/api/scheduling/slots")
-def list_delivery_slots(include_inactive: bool = False):
+def list_delivery_slots(include_inactive: bool = False, x_session_token: str | None = Header(default=None)):
+    staff=require_permission("orders",x_session_token)
+    operational_scope(staff)
     if not DATABASE_URL: return {"slots":[]}
     with db() as conn:
         rows=conn.execute("SELECT * FROM delivery_slots ORDER BY day_of_week,start_time").fetchall() if include_inactive else conn.execute("SELECT * FROM delivery_slots WHERE active=TRUE ORDER BY day_of_week,start_time").fetchall()
@@ -1221,7 +1225,9 @@ def update_delivery_slot(slot_id: str, payload: dict, x_session_token: str | Non
     return dict(row)
 
 @app.get("/api/scheduling/blackouts")
-def list_blackouts():
+def list_blackouts(x_session_token: str | None = Header(default=None)):
+    staff=require_permission("orders",x_session_token)
+    operational_scope(staff)
     if not DATABASE_URL: return {"blackouts":[]}
     with db() as conn: rows=conn.execute("SELECT * FROM delivery_blackouts ORDER BY blackout_date").fetchall()
     return {"blackouts":[dict(r) for r in rows]}
@@ -1238,12 +1244,14 @@ def create_blackout(payload: dict, x_session_token: str | None = Header(default=
     return dict(row)
 
 @app.get("/api/scheduling/availability")
-def scheduling_availability(postal_code: str = "", mode: str = "pickup_and_delivery"):
+def scheduling_availability(postal_code: str = "", mode: str = "pickup_and_delivery", x_session_token: str | None = Header(default=None)):
+    staff=require_permission("orders",x_session_token)
+    operational_scope(staff)
     if not DATABASE_URL: return {"areas":[],"slots":[],"blackouts":[]}
-    areas=list_service_areas()["areas"]
+    areas=list_service_areas(x_session_token=x_session_token)["areas"]
     if postal_code:
         areas=[a for a in areas if not a.get("postal_codes") or postal_code in a.get("postal_codes",[])]
-    slots=list_delivery_slots()["slots"]
+    slots=list_delivery_slots(x_session_token=x_session_token)["slots"]
     pickup_on=capability_enabled("pickup_enabled", False)
     delivery_on=capability_enabled("delivery_enabled", False)
     if mode=="pickup_only":
@@ -1252,22 +1260,23 @@ def scheduling_availability(postal_code: str = "", mode: str = "pickup_and_deliv
         slots=[s for s in slots if delivery_on and s.get("delivery_enabled")]
     elif mode=="pickup_and_delivery":
         slots=[s for s in slots if pickup_on and delivery_on and s.get("pickup_enabled") and s.get("delivery_enabled")]
-    return {"areas":areas,"slots":slots,"blackouts":list_blackouts()["blackouts"],"pickup_enabled":pickup_on,"delivery_enabled":delivery_on}
+    return {"areas":areas,"slots":slots,"blackouts":list_blackouts(x_session_token=x_session_token)["blackouts"],"pickup_enabled":pickup_on,"delivery_enabled":delivery_on}
 
 @app.get("/api/scheduling/orders")
 def scheduled_orders(date: str = "", q: str = "", x_session_token: str | None = Header(default=None)):
-    require_permission("orders",x_session_token)
+    staff=require_permission("orders",x_session_token)
+    brand_id,store_id=operational_scope(staff)
     query=(q or "").strip().lower()
     if not DATABASE_URL:
         values=[o.model_dump(mode="json") for o in memory_orders.values()]
-        values=[o for o in values if o.get("fulfillment_type") in ("pickup_only","delivery_only","pickup_and_delivery")]
+        values=[o for o in values if order_in_scope(o,brand_id,store_id) and o.get("fulfillment_type") in ("pickup_only","delivery_only","pickup_and_delivery")]
         if date:
             values=[o for o in values if o.get("pickup_date")==date or o.get("delivery_date")==date]
         if query:
             values=[o for o in values if query in str(o.get("order_number","")).lower() or query in str(o.get("customer",{}).get("name","")).lower() or query in str(o.get("customer",{}).get("phone","")).lower()]
         return {"orders":values[:250]}
-    clauses=["COALESCE(payload->>'fulfillment_type','walk_in') IN ('pickup_only','delivery_only','pickup_and_delivery')"]
-    params=[]
+    clauses=["COALESCE(payload->>'fulfillment_type','walk_in') IN ('pickup_only','delivery_only','pickup_and_delivery')", "payload->>'business_id'=%s", "payload->>'location_id'=%s"]
+    params=[brand_id,store_id]
     if date:
         clauses.append("(payload->>'pickup_date'=%s OR payload->>'delivery_date'=%s)")
         params.extend([date,date])
