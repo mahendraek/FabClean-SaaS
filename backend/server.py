@@ -1372,10 +1372,10 @@ def customer_payment_history(customer_id: str, x_session_token: str | None = Hea
 
 @app.get("/api/customers/{customer_id}/profile")
 def get_customer_profile(customer_id: str, x_session_token: str | None = Header(default=None)):
-    require_permission("customers",x_session_token)
     customer = get_customer(customer_id, x_session_token)
+    brand_id, _ = operational_scope(get_current_staff(x_session_token))
     values = get_order_values()
-    orders = [o for o in values if o.get("customer",{}).get("id") == customer_id]
+    orders = [o for o in values if o.get("customer",{}).get("id") == customer_id and o.get("business_id") == brand_id]
     orders.sort(key=lambda o: o.get("created_at",""), reverse=True)
     rewards = customer_rewards(customer_id, x_session_token)
     referrals = customer_referrals(customer_id, x_session_token)
@@ -1462,6 +1462,7 @@ def update_customer(customer_id: str, payload: CustomerCreate, x_session_token: 
 @app.get("/api/customers/{customer_id}/rewards")
 def customer_rewards(customer_id: str, x_session_token: str | None = Header(default=None)):
     require_permission("customers",x_session_token)
+    get_customer(customer_id,x_session_token)
     if not capability_enabled("rewards_enabled", True): return {"enabled":False,"balance":0,"transactions":[]}
     if not DATABASE_URL: return {"enabled":True,"balance": reward_balance(customer_id), "transactions": []}
     with db() as conn:
@@ -1471,6 +1472,7 @@ def customer_rewards(customer_id: str, x_session_token: str | None = Header(defa
 @app.post("/api/customers/{customer_id}/rewards")
 def add_reward_transaction(customer_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
     require_permission("customers",x_session_token)
+    get_customer(customer_id,x_session_token)
     require_capability("rewards_enabled", "Rewards")
     points = int(payload.get("points", 0) or 0)
     if points == 0: raise HTTPException(400, "Points cannot be zero")
@@ -1484,6 +1486,7 @@ def add_reward_transaction(customer_id: str, payload: dict, x_session_token: str
 @app.get("/api/customers/{customer_id}/referrals")
 def customer_referrals(customer_id: str, x_session_token: str | None = Header(default=None)):
     require_permission("customers",x_session_token)
+    get_customer(customer_id,x_session_token)
     if not capability_enabled("referrals_enabled", True): return {"enabled":False,"referral_code":"","referrals":[]}
     code = get_or_create_referral_code(customer_id)
     if not DATABASE_URL: return {"enabled":True,"referral_code": code, "referrals": []}
@@ -1812,6 +1815,7 @@ def create_order_payment(order_id: str, payload: dict, x_session_token: str | No
 @app.put("/api/orders/{order_id}")
 def update_order(order_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
     staff=require_permission("orders",x_session_token)
+    get_order(order_id,x_session_token)
     allowed = {
         "items", "notes", "discount", "tax", "payment_method", "payment_status",
         "due_at", "pricing_status", "quick_dropoff", "bag_count", "status",
@@ -1923,30 +1927,36 @@ def ensure_order_garments(order_id: str):
 @app.get("/api/orders/{order_id}/garments")
 def list_order_garments(order_id: str, x_session_token: str | None = Header(default=None)):
     require_permission("orders",x_session_token)
+    get_order(order_id,x_session_token)
     rows=ensure_order_garments(order_id)
     assembled=sum(1 for g in rows if g.get("assembled"))
     return {"garments":rows,"expected_count":len(rows),"assembled_count":assembled,"assembly_complete":bool(rows) and assembled==len(rows)}
 
 @app.get("/api/garments/{garment_code}")
 def find_garment(garment_code: str, x_session_token: str | None = Header(default=None)):
-    require_permission("orders",x_session_token)
+    staff=require_permission("orders",x_session_token)
+    brand_id, store_id = operational_scope(staff)
     code=garment_code.strip().upper()
     if not DATABASE_URL:
         for rows in memory_garments.values():
             for garment in rows:
                 if garment.get("garment_code","").upper()==code:
                     order=memory_orders.get(garment["order_id"])
-                    return {"garment":garment,"order":order.model_dump(mode="json") if order else None}
+                    if order and order_in_scope(order.model_dump(mode="json"),brand_id,store_id):
+                        return {"garment":garment,"order":order.model_dump(mode="json")}
         raise HTTPException(404,"Garment not found")
     with db() as conn:
         garment=conn.execute("SELECT * FROM order_garments WHERE UPPER(garment_code)=UPPER(%s)",(code,)).fetchone()
         if not garment: raise HTTPException(404,"Garment not found")
         order=conn.execute("SELECT payload FROM orders WHERE id=%s",(garment["order_id"],)).fetchone()
-    return {"garment":dict(garment),"order":dict(order["payload"]) if order else None}
+    if not order or not order_in_scope(order["payload"],brand_id,store_id):
+        raise HTTPException(404,"Garment not found")
+    return {"garment":dict(garment),"order":dict(order["payload"])}
 
 @app.post("/api/orders/{order_id}/garments/{garment_code}/scan")
 def scan_garment(order_id: str, garment_code: str, payload: dict, x_session_token: str | None = Header(default=None)):
     staff=require_permission("orders",x_session_token)
+    get_order(order_id,x_session_token)
     stage=str(payload.get("stage","assembly")).lower()
     if stage not in GARMENT_STAGES:
         raise HTTPException(400,"Invalid garment stage")
@@ -1968,6 +1978,7 @@ def scan_garment(order_id: str, garment_code: str, payload: dict, x_session_toke
 @app.post("/api/orders/{order_id}/garments/{garment_code}/reprint")
 def reprint_garment_tag(order_id: str, garment_code: str, x_session_token: str | None = Header(default=None)):
     staff=require_permission("orders",x_session_token)
+    get_order(order_id,x_session_token)
     ensure_order_garments(order_id)
     if not DATABASE_URL:
         rows=memory_garments.get(order_id,[])
@@ -1985,6 +1996,7 @@ def reprint_garment_tag(order_id: str, garment_code: str, x_session_token: str |
 @app.post("/api/orders/{order_id}/assembly/complete")
 def complete_garment_assembly(order_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
     staff=require_permission("orders",x_session_token)
+    get_order(order_id,x_session_token)
     rows=ensure_order_garments(order_id)
     missing=[g for g in rows if not g.get("assembled")]
     override=bool(payload.get("override",False))
@@ -2011,11 +2023,13 @@ def complete_garment_assembly(order_id: str, payload: dict, x_session_token: str
 @app.get("/api/orders/{order_id}/events")
 def list_order_events(order_id: str, x_session_token: str | None = Header(default=None)):
     require_permission("orders",x_session_token)
+    get_order(order_id,x_session_token)
     return {"events": get_order_events(order_id)}
 
 @app.get("/api/orders/{order_id}/inspection")
 def get_order_inspection(order_id: str, x_session_token: str | None = Header(default=None)):
     require_permission("processing",x_session_token)
+    get_order(order_id,x_session_token)
     if not DATABASE_URL:
         return {"items": [], "photos": []}
     with db() as conn:
@@ -2029,6 +2043,7 @@ def get_order_inspection(order_id: str, x_session_token: str | None = Header(def
 @app.put("/api/orders/{order_id}/inspection/{item_barcode}")
 def update_item_inspection(order_id: str, item_barcode: str, payload: dict, x_session_token: str | None = Header(default=None)):
     staff=require_permission("processing",x_session_token)
+    get_order(order_id,x_session_token)
     tags = list(payload.get("tags") or [])
     notes = str(payload.get("condition_notes", ""))
     status = str(payload.get("condition_status", "inspected"))
@@ -2050,6 +2065,7 @@ def update_item_inspection(order_id: str, item_barcode: str, payload: dict, x_se
 @app.post("/api/orders/{order_id}/photos")
 def add_order_photo(order_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
     staff=require_permission("processing",x_session_token)
+    get_order(order_id,x_session_token)
     encoded = str(payload.get("data_base64", ""))
     if not encoded:
         raise HTTPException(400, "Photo data is required")
@@ -2079,6 +2095,7 @@ def add_order_photo(order_id: str, payload: dict, x_session_token: str | None = 
 @app.get("/api/orders/{order_id}/photos/{photo_id}")
 def get_order_photo(order_id: str, photo_id: str, x_session_token: str | None = Header(default=None)):
     require_permission("processing",x_session_token)
+    get_order(order_id,x_session_token)
     if not DATABASE_URL:
         raise HTTPException(404, "Photo not found")
     with db() as conn:
@@ -2090,6 +2107,7 @@ def get_order_photo(order_id: str, photo_id: str, x_session_token: str | None = 
 @app.delete("/api/orders/{order_id}/photos/{photo_id}")
 def delete_order_photo(order_id: str, photo_id: str, x_session_token: str | None = Header(default=None)):
     staff=require_permission("processing",x_session_token)
+    get_order(order_id,x_session_token)
     if not DATABASE_URL:
         return {"deleted": True}
     with db() as conn:
@@ -2102,6 +2120,7 @@ def delete_order_photo(order_id: str, photo_id: str, x_session_token: str | None
 @app.put("/api/orders/{order_id}/status")
 def update_order_status(order_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
     staff=require_permission("orders",x_session_token)
+    get_order(order_id,x_session_token)
     if not DATABASE_URL:
         order = memory_orders.get(order_id)
         if not order:
@@ -2501,6 +2520,7 @@ def create_subscription_plan(payload: dict, x_session_token: str | None = Header
 @app.get("/api/customers/{customer_id}/subscriptions")
 def customer_subscriptions(customer_id: str, x_session_token: str | None = Header(default=None)):
     require_permission("customers",x_session_token)
+    get_customer(customer_id,x_session_token)
     if not capability_enabled("subscriptions_enabled", True): return {"subscriptions":[],"enabled":False}
     if not DATABASE_URL: return {"subscriptions":[],"enabled":True}
     with db() as conn:
@@ -2686,6 +2706,7 @@ def prepare_notification(payload: dict, x_session_token: str | None = Header(def
 @app.get("/api/customers/{customer_id}/notifications")
 def customer_notifications(customer_id: str, x_session_token: str | None = Header(default=None)):
     require_permission("customers",x_session_token)
+    get_customer(customer_id,x_session_token)
     if not DATABASE_URL: return {"notifications":[]}
     with db() as conn:
         rows=conn.execute("SELECT * FROM customer_notifications WHERE customer_id=%s ORDER BY created_at DESC",(customer_id,)).fetchall()
@@ -2834,7 +2855,8 @@ def ai_communication_draft(order_id: str, payload: dict, x_session_token: str | 
 
 @app.get("/api/dashboard")
 def dashboard(x_session_token: str | None = Header(default=None)):
-    require_permission("orders",x_session_token)
+    staff=require_permission("orders",x_session_token)
+    brand_id, store_id = operational_scope(staff)
     if DATABASE_URL:
         with db() as conn:
             row = conn.execute("""
@@ -2849,7 +2871,8 @@ def dashboard(x_session_token: str | None = Header(default=None)):
                     COALESCE(SUM(CASE WHEN payload->>'payment_status'='paid' THEN NULLIF(payload->>'total','')::numeric ELSE 0 END),0) AS revenue,
                     COALESCE(AVG(CASE WHEN payload->>'payment_status'='paid' THEN NULLIF(payload->>'total','')::numeric END),0) AS average_order_value
                 FROM orders
-            """).fetchone()
+                WHERE payload->>'business_id'=%s AND payload->>'location_id'=%s
+            """,(brand_id,store_id)).fetchone()
         d=dict(row)
         return {
             "orders_today": int(d.get("orders_today") or 0),
@@ -2864,7 +2887,7 @@ def dashboard(x_session_token: str | None = Header(default=None)):
             "database": "postgres",
         }
 
-    values = get_order_values()
+    values = [o for o in get_order_values() if order_in_scope(o,brand_id,store_id)]
     today = datetime.now(timezone.utc).date().isoformat()
     today_values = [o for o in values if str(o.get("created_at",""))[:10] == today]
     paid = [o for o in values if o.get("payment_status") == "paid"]
