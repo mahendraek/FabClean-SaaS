@@ -1580,8 +1580,12 @@ def create_order(payload: OrderCreate, x_session_token: str | None = Header(defa
             customer = customer_row_to_dict(row) if row else None
         if not customer:
             raise HTTPException(404, "Selected customer not found")
+        if (customer.get("business_id") if isinstance(customer, dict) else customer.business_id) != brand_id:
+            raise HTTPException(404, "Selected customer not found")
     else:
         customer = find_customer_by_phone(payload.customer_phone)
+        if customer and (customer.get("business_id") if isinstance(customer, dict) else customer.business_id) != brand_id:
+            customer = None
         if not customer:
             customer = create_customer_record(CustomerCreate(
                 name=payload.customer_name,
