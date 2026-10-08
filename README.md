@@ -1,6 +1,6 @@
 # FabClean
 
-FabClean is a configurable laundry operations and customer management platform for laundromats, dry cleaners, shoe/bag/curtain cleaning businesses, and related garment-care services. Add test.
+FabClean is a configurable laundry operations and customer management platform for laundromats, dry cleaners, shoe/bag/curtain cleaning businesses, and related garment-care services.
 
 ## Architecture
 - Frontend: Expo + React Native + Expo Router (Web, iOS, Android)
