@@ -1332,10 +1332,11 @@ def validate_offer(payload: dict):
 
 @app.get("/api/customers")
 def list_customers(q: str = "", x_session_token: str | None = Header(default=None)):
-    require_permission("customers",x_session_token)
+    staff = require_permission("customers",x_session_token)
+    brand_id, store_id = operational_scope(staff)
     query = (q or "").strip().lower()
     if not DATABASE_URL:
-        values = [c.model_dump(mode="json") for c in memory_customers.values()]
+        values = [c.model_dump(mode="json") for c in memory_customers.values() if c.business_id == brand_id]
         if query:
             values = [
                 c for c in values
@@ -1350,13 +1351,13 @@ def list_customers(q: str = "", x_session_token: str | None = Header(default=Non
             rows = conn.execute(
                 """
                 SELECT * FROM customers
-                WHERE LOWER(name) LIKE %s OR LOWER(phone) LIKE %s OR LOWER(email) LIKE %s
+                WHERE business_id=%s AND (LOWER(name) LIKE %s OR LOWER(phone) LIKE %s OR LOWER(email) LIKE %s)
                 ORDER BY updated_at DESC LIMIT 50
                 """,
-                (like, like, like),
+                (brand_id, like, like, like),
             ).fetchall()
         else:
-            rows = conn.execute("SELECT * FROM customers ORDER BY updated_at DESC LIMIT 50").fetchall()
+            rows = conn.execute("SELECT * FROM customers WHERE business_id=%s ORDER BY updated_at DESC LIMIT 50",(brand_id,)).fetchall()
     return {"customers": [customer_row_to_dict(row) for row in rows]}
 
 @app.get("/api/customers/{customer_id}/payments")
@@ -1399,22 +1400,27 @@ def get_customer_profile(customer_id: str, x_session_token: str | None = Header(
 
 @app.get("/api/customers/{customer_id}")
 def get_customer(customer_id: str, x_session_token: str | None = Header(default=None)):
-    require_permission("customers",x_session_token)
+    staff = require_permission("customers",x_session_token)
+    brand_id, store_id = operational_scope(staff)
     if not DATABASE_URL:
         customer = memory_customers.get(customer_id)
-        if not customer:
+        if not customer or customer.business_id != brand_id:
             raise HTTPException(404, "Customer not found")
         return customer
     with db() as conn:
-        row = conn.execute("SELECT * FROM customers WHERE id=%s", (customer_id,)).fetchone()
+        row = conn.execute("SELECT * FROM customers WHERE id=%s AND business_id=%s", (customer_id,brand_id)).fetchone()
     if not row:
         raise HTTPException(404, "Customer not found")
     return customer_row_to_dict(row)
 
 @app.post("/api/customers")
 def create_customer(payload: CustomerCreate, x_session_token: str | None = Header(default=None)):
-    require_permission("customers",x_session_token)
-    return create_customer_record(payload)
+    staff = require_permission("customers",x_session_token)
+    brand_id, store_id = operational_scope(staff)
+    values = payload.model_dump()
+    values["business_id"] = brand_id
+    values["location_id"] = store_id
+    return create_customer_record(CustomerCreate(**values))
 
 @app.put("/api/customers/{customer_id}")
 def update_customer(customer_id: str, payload: CustomerCreate, x_session_token: str | None = Header(default=None)):
