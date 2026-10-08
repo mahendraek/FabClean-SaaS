@@ -1494,19 +1494,47 @@ def claim_referral(payload: dict, x_session_token: str | None = Header(default=N
         updated = conn.execute("UPDATE referrals SET referred_customer_id=%s,status='claimed' WHERE id=%s RETURNING *", (referred_customer_id,row["id"])).fetchone()
     return dict(updated)
 
+def operational_scope(staff: dict):
+    """Resolve permitted active tenant and store; fail closed on missing context."""
+    brand_id = staff.get("active_brand_id") or staff.get("business_id")
+    store_id = staff.get("active_store_id")
+    if not store_id and not staff.get("active_brand_id"):
+        store_id = staff.get("location_id")
+    if not brand_id or not store_id:
+        raise HTTPException(409, "Select an active brand and store")
+    brands = accessible_brand_ids(staff)
+    stores = accessible_store_ids(staff, brand_id)
+    if brands is not None and brand_id not in brands:
+        raise HTTPException(403, "Brand access denied")
+    if stores is not None and store_id not in stores:
+        raise HTTPException(403, "Store access denied")
+    if DATABASE_URL:
+        with db() as conn:
+            row = conn.execute("SELECT id FROM stores WHERE id=%s AND brand_id=%s AND active=TRUE", (store_id, brand_id)).fetchone()
+        if not row:
+            raise HTTPException(403, "Selected store is unavailable")
+    return brand_id, store_id
+
+
+def order_in_scope(order: dict, brand_id: str, store_id: str):
+    return order.get("business_id") == brand_id and order.get("location_id") == store_id
+
+
 @app.get("/api/orders")
 def list_orders(x_session_token: str | None = Header(default=None)):
     staff = require_permission("orders", x_session_token)
-    values = get_order_values()
-    if staff.get("role") == "owner":
-        return {"orders": values, "scope": "all"}
-    return {"orders": values, "scope": "operational"}
+    brand_id, store_id = operational_scope(staff)
+    values = [o for o in get_order_values() if order_in_scope(o, brand_id, store_id)]
+    return {"orders": values, "scope": "store"}
 
 @app.get("/api/orders/{identifier}")
 def get_order(identifier: str, x_session_token: str | None = Header(default=None)):
-    require_permission("orders",x_session_token)
+    staff = require_permission("orders",x_session_token)
+    brand_id, store_id = operational_scope(staff)
     if not DATABASE_URL:
         for order in memory_orders.values():
+            if not order_in_scope(order.model_dump(mode="json"),brand_id,store_id):
+                continue
             if identifier in (order.id, order.order_number, order.barcode_value):
                 return order
             if any(item.barcode_value == identifier for item in order.items):
@@ -1516,6 +1544,8 @@ def get_order(identifier: str, x_session_token: str | None = Header(default=None
         rows = conn.execute("SELECT payload FROM orders ORDER BY created_at DESC").fetchall()
         for row in rows:
             order = row["payload"]
+            if not order_in_scope(order,brand_id,store_id):
+                continue
             if identifier in (order.get("id"), order.get("order_number"), order.get("barcode_value")):
                 return order
             if any(item.get("barcode_value") == identifier for item in order.get("items", [])):
@@ -1525,6 +1555,7 @@ def get_order(identifier: str, x_session_token: str | None = Header(default=None
 @app.post("/api/orders")
 def create_order(payload: OrderCreate, x_session_token: str | None = Header(default=None)):
     staff=require_permission("orders",x_session_token)
+    brand_id, store_id = operational_scope(staff)
     if not payload.quick_dropoff and not payload.items:
         raise HTTPException(400, "At least one service is required unless this is a quick drop-off")
     if payload.quick_dropoff and payload.bag_count < 1:
@@ -1649,6 +1680,8 @@ def create_order(payload: OrderCreate, x_session_token: str | None = Header(defa
         return order
 
     data = order.model_dump(mode="json")
+    data["business_id"] = brand_id
+    data["location_id"] = store_id
     with db() as conn:
         conn.execute(
             "INSERT INTO orders (id, order_number, barcode_value, payload) VALUES (%s, %s, %s, %s::jsonb)",
