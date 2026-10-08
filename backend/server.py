@@ -2119,10 +2119,17 @@ def get_context(x_session_token: str | None = Header(default=None)):
             stores=conn.execute("SELECT * FROM stores WHERE active=TRUE AND id=ANY(%s) ORDER BY brand_id,name",(list(store_ids),)).fetchall()
         else:
             stores=[]
-    active_brand_id=staff.get("active_brand_id") or staff.get("business_id") or (brands[0]["id"] if brands else None)
-    active_store_id=staff.get("active_store_id") or staff.get("location_id") or (stores[0]["id"] if stores else None)
-    active_brand=next((dict(x) for x in brands if x["id"]==active_brand_id),dict(brands[0]) if brands else None)
-    active_store=next((dict(x) for x in stores if x["id"]==active_store_id),dict(stores[0]) if stores else None)
+    # Only resolve stores belonging to the active brand; never silently cross tenants.
+    requested_brand_id=staff.get("active_brand_id") or staff.get("business_id")
+    active_brand=next((dict(x) for x in brands if x["id"]==requested_brand_id),dict(brands[0]) if brands else None)
+    active_brand_id=active_brand["id"] if active_brand else None
+    brand_stores=[dict(x) for x in stores if x["brand_id"]==active_brand_id]
+    requested_store_id=staff.get("active_store_id")
+    if requested_store_id is None and staff.get("active_brand_id") is None:
+        requested_store_id=staff.get("location_id")
+    active_store=next((x for x in brand_stores if x["id"]==requested_store_id),None)
+    if not active_store and staff.get("active_brand_id") is None:
+        active_store=brand_stores[0] if brand_stores else None
     safe_staff=dict(staff); safe_staff.pop("password_hash",None); safe_staff.pop("password_salt",None)
     return {
         "staff":safe_staff,
@@ -2152,9 +2159,11 @@ def update_context(payload: dict, x_session_token: str | None = Header(default=N
             if not store: raise HTTPException(404,"Store not found in this brand")
             store_ids=accessible_store_ids(staff,brand_id)
             if store_ids is not None and store_id not in store_ids: raise HTTPException(403,"Store is not accessible")
-        conn.execute("UPDATE staff_sessions SET active_brand_id=%s,active_store_id=%s WHERE token=%s",(brand_id,store_id,x_session_token))
+        updated=conn.execute("UPDATE staff_sessions SET active_brand_id=%s,active_store_id=%s WHERE token=%s AND expires_at>NOW() RETURNING token",(brand_id,store_id,x_session_token)).fetchone()
+        if not updated: raise HTTPException(401,"Session expired; sign in again")
     record_platform_audit(staff,"context_switched",brand_id=brand_id,store_id=store_id)
-    return {"active_brand_id":brand_id,"active_store_id":store_id}
+    # Read the persisted session through the same path used by subsequent screens.
+    return get_context(x_session_token)
 
 @app.get("/api/platform/brands")
 def list_brands(x_session_token: str | None = Header(default=None)):
