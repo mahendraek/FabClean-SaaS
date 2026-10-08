@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "FabClean",
+    "slug": "fabclean",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "fabclean",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mavanta.fabclean",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Scan laundry order and garment barcodes",
+        "NSPhotoLibraryUsageDescription": "Attach item condition and cleaning photos"
+      }
+    },
+    "android": {
+      "package": "com.mavanta.fabclean",
+      "permissions": ["CAMERA", "READ_MEDIA_IMAGES"]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": ["expo-router", "expo-font", "expo-image", "expo-image-picker", "expo-secure-store"],
+    "experiments": { "typedRoutes": true }
+  }
+}
