@@ -1363,11 +1363,13 @@ def list_customers(q: str = "", x_session_token: str | None = Header(default=Non
 @app.get("/api/customers/{customer_id}/payments")
 def customer_payment_history(customer_id: str, x_session_token: str | None = Header(default=None)):
     get_customer(customer_id,x_session_token)
+    brand_id,store_id=operational_scope(get_current_staff(x_session_token))
     if not DATABASE_URL:
-        rows=[p for p in memory_payments if p.get("customer_id")==customer_id]
+        permitted={o["id"] for o in get_order_values() if o.get("business_id")==brand_id}
+        rows=[p for p in memory_payments if p.get("customer_id")==customer_id and p.get("order_id") in permitted]
     else:
         with db() as conn:
-            rows=[dict(r) for r in conn.execute("SELECT * FROM payment_transactions WHERE customer_id=%s ORDER BY created_at DESC",(customer_id,)).fetchall()]
+            rows=[dict(r) for r in conn.execute("SELECT p.* FROM payment_transactions p JOIN orders o ON o.id=p.order_id WHERE p.customer_id=%s AND o.payload->>'business_id'=%s ORDER BY p.created_at DESC",(customer_id,brand_id)).fetchall()]
     return {"payments":rows}
 
 @app.get("/api/customers/{customer_id}/profile")
@@ -1691,6 +1693,8 @@ def create_order(payload: OrderCreate, x_session_token: str | None = Header(defa
         status="inspection" if payload.quick_dropoff else "received",
     )
 
+    order.business_id = brand_id
+    order.location_id = store_id
     if not DATABASE_URL:
         memory_orders[order_id] = order
         ensure_order_garments(order_id)
@@ -1746,13 +1750,15 @@ def order_receipt(order_id: str, x_session_token: str | None = Header(default=No
 
 @app.get("/api/financial/daily")
 def daily_financial_summary(date: str | None = None, x_session_token: str | None = Header(default=None)):
-    require_permission("admin",x_session_token)
+    staff=require_permission("admin",x_session_token)
+    brand_id,store_id=operational_scope(staff)
     target=date or datetime.now(timezone.utc).date().isoformat()
     if not DATABASE_URL:
-        rows=[p for p in memory_payments if str(p.get("created_at",""))[:10]==target]
+        permitted={o["id"] for o in get_order_values() if order_in_scope(o,brand_id,store_id)}
+        rows=[p for p in memory_payments if str(p.get("created_at",""))[:10]==target and p.get("order_id") in permitted]
     else:
         with db() as conn:
-            rows=[dict(r) for r in conn.execute("SELECT * FROM payment_transactions WHERE created_at::date=%s::date ORDER BY created_at",(target,)).fetchall()]
+            rows=[dict(r) for r in conn.execute("SELECT p.* FROM payment_transactions p JOIN orders o ON o.id=p.order_id WHERE p.created_at::date=%s::date AND o.payload->>'business_id'=%s AND o.payload->>'location_id'=%s ORDER BY p.created_at",(target,brand_id,store_id)).fetchall()]
     cash=round(sum(float(r.get("amount",0) or 0) for r in rows if r.get("payment_method")=="cash"),2)
     card=round(sum(float(r.get("amount",0) or 0) for r in rows if r.get("payment_method")=="card"),2)
     other=round(sum(float(r.get("amount",0) or 0) for r in rows if r.get("payment_method")=="other"),2)
