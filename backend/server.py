@@ -850,24 +850,24 @@ def customer_row_to_dict(row):
     data.update(customer_metrics(data["id"], data["phone"]))
     return data
 
-def find_customer_by_phone(phone: str):
+def find_customer_by_phone(phone: str, brand_id: str | None = None):
     phone = (phone or "").strip()
     if not phone:
         return None
     if not DATABASE_URL:
         for customer in memory_customers.values():
-            if customer.phone == phone:
+            if customer.phone == phone and (brand_id is None or customer.business_id == brand_id):
                 return customer
         return None
     with db() as conn:
         row = conn.execute(
-            "SELECT * FROM customers WHERE phone=%s ORDER BY updated_at DESC LIMIT 1",
-            (phone,),
+            "SELECT * FROM customers WHERE phone=%s AND (%s IS NULL OR business_id=%s) ORDER BY updated_at DESC LIMIT 1",
+            (phone,brand_id,brand_id),
         ).fetchone()
     return customer_row_to_dict(row) if row else None
 
 def create_customer_record(payload: CustomerCreate):
-    existing = find_customer_by_phone(payload.phone)
+    existing = find_customer_by_phone(payload.phone,payload.business_id)
     if existing:
         return existing
     customer_id = str(uuid.uuid4())
@@ -1362,7 +1362,7 @@ def list_customers(q: str = "", x_session_token: str | None = Header(default=Non
 
 @app.get("/api/customers/{customer_id}/payments")
 def customer_payment_history(customer_id: str, x_session_token: str | None = Header(default=None)):
-    require_permission("customers",x_session_token)
+    get_customer(customer_id,x_session_token)
     if not DATABASE_URL:
         rows=[p for p in memory_payments if p.get("customer_id")==customer_id]
     else:
@@ -1424,7 +1424,13 @@ def create_customer(payload: CustomerCreate, x_session_token: str | None = Heade
 
 @app.put("/api/customers/{customer_id}")
 def update_customer(customer_id: str, payload: CustomerCreate, x_session_token: str | None = Header(default=None)):
-    require_permission("customers",x_session_token)
+    previous = get_customer(customer_id,x_session_token)
+    staff = get_current_staff(x_session_token)
+    brand_id, store_id = operational_scope(staff)
+    values = payload.model_dump()
+    values["business_id"] = brand_id
+    values["location_id"] = previous["location_id"] if isinstance(previous,dict) else previous.location_id
+    payload = CustomerCreate(**values)
     if not DATABASE_URL:
         if customer_id not in memory_customers:
             raise HTTPException(404, "Customer not found")
@@ -1442,11 +1448,11 @@ def update_customer(customer_id: str, payload: CustomerCreate, x_session_token: 
             """
             UPDATE customers
             SET business_id=%s, location_id=%s, name=%s, phone=%s, email=%s, notes=%s, updated_at=NOW()
-            WHERE id=%s RETURNING *
+            WHERE id=%s AND business_id=%s RETURNING *
             """,
             (
                 payload.business_id, payload.location_id, payload.name.strip(), payload.phone.strip(),
-                payload.email.strip(), payload.notes.strip(), customer_id
+                payload.email.strip(), payload.notes.strip(), customer_id,brand_id
             ),
         ).fetchone()
     if not row:
@@ -1589,9 +1595,7 @@ def create_order(payload: OrderCreate, x_session_token: str | None = Header(defa
         if (customer.get("business_id") if isinstance(customer, dict) else customer.business_id) != brand_id:
             raise HTTPException(404, "Selected customer not found")
     else:
-        customer = find_customer_by_phone(payload.customer_phone)
-        if customer and (customer.get("business_id") if isinstance(customer, dict) else customer.business_id) != brand_id:
-            customer = None
+        customer = find_customer_by_phone(payload.customer_phone,brand_id)
         if not customer:
             customer = create_customer_record(CustomerCreate(
                 name=payload.customer_name,
