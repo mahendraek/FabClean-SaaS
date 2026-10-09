@@ -1,6 +1,6 @@
 # Tenant and store data isolation
 
-Status: IMPLEMENTED — validated; awaiting review, not merged.
+Status: MERGED — validated and merged into `main` at `971f2bc` with user approval. Render deployment remains pending authenticated verification.
 Priority: P0
 PR: https://github.com/mahendraek/FabClean-SaaS/pull/4
 Implementation branch: `codex/pr-4-tenant-isolation`

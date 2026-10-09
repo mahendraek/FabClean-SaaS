@@ -5,20 +5,20 @@ Develop one item at a time. Keep future scopes in the backlog; do not implement 
 
 ## Current work
 
-**PR #4 — tenant and store data isolation:** implementation and validation complete on `codex/pr-4-tenant-isolation`; awaiting review. Do not merge without explicit approval.
+**PR #4 — tenant and store data isolation:** merged into `main` at `971f2bc` with explicit user authorization. The remote main ancestry was verified. Render deployment is pending authenticated verification; see [deployment status](DEPLOYMENT_STATUS.md).
 
 Implementation commit: `b4b621d`. Pushed to `roadmap/tenant-data-isolation`; the remote PR #4 head ref was independently verified at that commit. This confirms branch publication, not GitHub review or merge status.
 
 The implementation adds forced PostgreSQL row-level security on 21 operational tables, scoped catalogs/settings in memory, store-scoped customer histories and metrics, validated related IDs, and scope-aware role checks. Unknown/inconsistent historical ownership is quarantined. See [migration and validation notes](roadmap/tenant-data-isolation.md).
 
-**Next:** PR #3 — brand/store experience, after PR #4 review. Rebase each future implementation on the accepted predecessor so security behavior and tests remain intact.
+**Next:** PR #3 — brand/store experience, selected on new branch `codex/pr-3-brand-store-switcher` from merged `main`. Implementation has not started while Render deployment is being resolved. Rebase each future implementation on the accepted predecessor so security behavior and tests remain intact.
 
 ## Sequential PR queue
 
 | Order | PR | Priority | Scope | Development status | Depends on |
 | --- | --- | --- | --- | --- | --- |
-| 1 | [#4](https://github.com/mahendraek/FabClean-SaaS/pull/4) | P0 | [Tenant/store data isolation](roadmap/tenant-data-isolation.md) | Implemented; awaiting review | Existing context persistence |
-| 2 | [#3](https://github.com/mahendraek/FabClean-SaaS/pull/3) | P0 | [Shared brand/store switcher](roadmap/brand-store-experience.md) | Planned; next | #4 |
+| 1 | [#4](https://github.com/mahendraek/FabClean-SaaS/pull/4) | P0 | [Tenant/store data isolation](roadmap/tenant-data-isolation.md) | Merged at `971f2bc`; deployment pending | Existing context persistence |
+| 2 | [#3](https://github.com/mahendraek/FabClean-SaaS/pull/3) | P0 | [Shared brand/store switcher](roadmap/brand-store-experience.md) | Selected; new branch prepared | #4 |
 | 3 | [#5](https://github.com/mahendraek/FabClean-SaaS/pull/5) | P1 | [Store hierarchy and operational handoffs](roadmap/store-hierarchy.md) | Planned | #4, #3 |
 | 4 | [#6](https://github.com/mahendraek/FabClean-SaaS/pull/6) | P1 | [Security, testing and performance](roadmap/security-performance.md) | Planned | #4, #3, #5 |
 | 5 | [#7](https://github.com/mahendraek/FabClean-SaaS/pull/7) | P1 | [Platform administration/onboarding](roadmap/platform-management.md) | Planned | #4, #6 |
@@ -34,6 +34,7 @@ The sequence follows the scope documents' P0/P1/P2 priorities and prerequisite w
 
 - #1: context refresh fix is included in `main` via commit `07c3097`, whose subject references #1.
 - #2: context persistence fix was merged into `main` at `f674aa4` (explicit merge commit).
+- #4: implementation merged into main with normal Git merge commit `971f2bc`, independently verified from the remote; GitHub API review flags remain unavailable.
 - #3–#12: remote PR head refs and matching `roadmap/*` branches were discovered through authenticated Git. All ten scope documents are retained under `docs/roadmap/`.
 - GitHub API requests returned `Forbidden` during this audit. Current open/closed/merged flags, review decisions, CI results, comments and issue inventory for #3–#12 are **not verified**. A Git PR ref alone does not establish that a PR is open. Preserve this distinction until API access works.
 - No PR numbers above #12 were discovered in the current remote refs. Future, unpublished PRs cannot be enumerated yet; add them when created. PR 45 mentioned in the baseline import belongs to the source project's history and is not a queued FabClean-SaaS PR.
