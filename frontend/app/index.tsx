@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 
-let dashboardCache:any=null;
 import { useRouter } from "expo-router";
 import { Image, ScrollView, StyleSheet, Text, Pressable, View } from "react-native";
 import { CheckCircle, Clock, Package, Sneaker, Sparkle, Truck } from "phosphor-react-native";
@@ -31,7 +30,7 @@ function Nav({settings}:{settings:any}){
       <Pressable onPress={()=>router.push("/customers")}><Text style={s.navText}>Customers</Text></Pressable>
       {settings.pickup_enabled||settings.delivery_enabled?<Pressable onPress={()=>router.push("/pickup-schedule")}><Text style={s.navText}>Pickup / Delivery Schedule</Text></Pressable>:null}
       <Pressable onPress={()=>router.push("/services")}><Text style={s.navText}>Services</Text></Pressable>
-      {canAdmin?<Pressable onPress={()=>router.push("/admin")}><Text style={s.navText}>Admin</Text></Pressable>:null}{staff?<Pressable onPress={()=>{setStoredSession(null,"");router.push("/sign-in");}}><Text style={s.navText}>{staff.name} · Sign out</Text></Pressable>:<Pressable onPress={()=>router.push("/sign-in")}><Text style={s.navText}>Staff Sign In</Text></Pressable>}
+      {canAdmin?<Pressable onPress={()=>router.push("/admin")}><Text style={s.navText}>Admin</Text></Pressable>:null}{staff?<Pressable onPress={()=>{void setStoredSession(null,"").then(()=>router.replace("/sign-in"));}}><Text style={s.navText}>{staff.name} · Sign out</Text></Pressable>:<Pressable onPress={()=>router.push("/sign-in")}><Text style={s.navText}>Staff Sign In</Text></Pressable>}
     </View>
   </View>
 }
@@ -41,23 +40,9 @@ export default function Home() {
   const [dashboard,setDashboard]=useState<any>(null);
   const [settings,setSettings]=useState<any>({});
   useEffect(()=>{
-    if(dashboardCache)setDashboard(dashboardCache);
-    if(typeof window!=="undefined"){
-      try{
-        const cached=window.localStorage.getItem("fabclean-dashboard-cache");
-        if(cached&&!dashboardCache){
-          const parsed=JSON.parse(cached);
-          if(parsed?.data)setDashboard(parsed.data);
-        }
-      }catch{}
-    }
     api.get<any>("/settings").then(setSettings).catch(()=>{});
     api.get<any>("/dashboard").then(data=>{
-      dashboardCache=data;
       setDashboard(data);
-      if(typeof window!=="undefined"){
-        try{window.localStorage.setItem("fabclean-dashboard-cache",JSON.stringify({at:Date.now(),data}));}catch{}
-      }
     }).catch(()=>{});
   },[]);
   return <ScrollView style={{backgroundColor:colors.soft}} contentContainerStyle={s.page}>

@@ -5,20 +5,22 @@ Develop one item at a time. Keep future scopes in the backlog; do not implement 
 
 ## Current work
 
-**PR #4 — tenant and store data isolation:** merged into `main` at `971f2bc` with explicit user authorization. The remote main ancestry was verified. Render deployment is pending authenticated verification; see [deployment status](DEPLOYMENT_STATUS.md).
+**PR #4 — tenant and store data isolation:** merged into `main` at `971f2bc` with explicit user authorization. The remote main ancestry was verified. Both Render services report live deployments of `a800a73`; public endpoint verification is pending network publication; see [deployment status](DEPLOYMENT_STATUS.md).
 
 Implementation commit: `b4b621d`. Pushed to `roadmap/tenant-data-isolation`; the remote PR #4 head ref was independently verified at that commit. This confirms branch publication, not GitHub review or merge status.
 
 The implementation adds forced PostgreSQL row-level security on 21 operational tables, scoped catalogs/settings in memory, store-scoped customer histories and metrics, validated related IDs, and scope-aware role checks. Unknown/inconsistent historical ownership is quarantined. See [migration and validation notes](roadmap/tenant-data-isolation.md).
 
-**Next:** PR #3 — brand/store experience, selected on new branch `codex/pr-3-brand-store-switcher` from merged `main`. Implementation has not started while Render deployment is being resolved. Rebase each future implementation on the accepted predecessor so security behavior and tests remain intact.
+**Active: PR #3 — brand/store experience:** implementation `ae6d1bb` on `codex/pr-3-brand-store-switcher`, based on merged `main`. Shared header, confirmed store switching, screen refresh, native secure sessions and authorized relogin restoration are implemented. Validation: 27 backend tests, 9 frontend tests, desktop/mobile-web browser checks and 26-route web export passed. Awaiting review; native-device validation remains outstanding. See [implementation notes](roadmap/brand-store-experience.md).
+
+**Next after #3 acceptance:** PR #5 — store hierarchy and operational handoffs. Rebase each future implementation on the accepted predecessor so security behavior and tests remain intact.
 
 ## Sequential PR queue
 
 | Order | PR | Priority | Scope | Development status | Depends on |
 | --- | --- | --- | --- | --- | --- |
-| 1 | [#4](https://github.com/mahendraek/FabClean-SaaS/pull/4) | P0 | [Tenant/store data isolation](roadmap/tenant-data-isolation.md) | Merged at `971f2bc`; deployment pending | Existing context persistence |
-| 2 | [#3](https://github.com/mahendraek/FabClean-SaaS/pull/3) | P0 | [Shared brand/store switcher](roadmap/brand-store-experience.md) | Selected; new branch prepared | #4 |
+| 1 | [#4](https://github.com/mahendraek/FabClean-SaaS/pull/4) | P0 | [Tenant/store data isolation](roadmap/tenant-data-isolation.md) | Merged at `971f2bc`; Render live at `a800a73` | Existing context persistence |
+| 2 | [#3](https://github.com/mahendraek/FabClean-SaaS/pull/3) | P0 | [Shared brand/store switcher](roadmap/brand-store-experience.md) | Implemented and validated; awaiting review | #4 |
 | 3 | [#5](https://github.com/mahendraek/FabClean-SaaS/pull/5) | P1 | [Store hierarchy and operational handoffs](roadmap/store-hierarchy.md) | Planned | #4, #3 |
 | 4 | [#6](https://github.com/mahendraek/FabClean-SaaS/pull/6) | P1 | [Security, testing and performance](roadmap/security-performance.md) | Planned | #4, #3, #5 |
 | 5 | [#7](https://github.com/mahendraek/FabClean-SaaS/pull/7) | P1 | [Platform administration/onboarding](roadmap/platform-management.md) | Planned | #4, #6 |
@@ -54,7 +56,7 @@ These items remain required by [the functional specification](FUNCTIONAL_SPEC_V1
 | Phase 2 — messaging | SMS/WhatsApp/push delivery, consent and preferences; coordinate email/SMS receipts with #11. |
 | Phase 2 — operations | Staff clock-in/out, QuickBooks/Xero and stronger multi-location operations. |
 | Phase 3+ | Washer/dryer integrations and telemetry, payroll, smart lockers, advanced plant management, automated assembly, complex multi-store management, advanced marketing automation, AI receptionist and RFID. |
-| Engineering follow-ups | Existing 19 frontend TypeScript errors; native iOS/Android validation; migration tooling and CI deployment checks; session/load/concurrency testing under #6. |
+| Engineering follow-ups | Existing 34 frontend TypeScript errors (current baseline; previously recorded as 19); native iOS/Android validation; migration tooling and CI deployment checks; session/load/concurrency testing under #6. |
 
 ## How to maintain the queue
 
