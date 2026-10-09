@@ -4,6 +4,7 @@ Status: IMPLEMENTED — awaiting review; not merged or deployed.
 Priority: P1 — selected after PR #3.
 PR: https://github.com/mahendraek/FabClean-SaaS/pull/5
 Implementation branch: `codex/pr-5-store-hierarchy`, based on accepted main `47e67a9`.
+Implementation commit: `324e911`. Publication updates `roadmap/store-hierarchy` with a normal push; GitHub API metadata editing remains blocked by `Forbidden`.
 
 ## Design and delivered behavior
 
