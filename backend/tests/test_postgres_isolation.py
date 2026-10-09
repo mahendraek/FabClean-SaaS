@@ -195,6 +195,24 @@ class PostgresIsolationTests(unittest.TestCase):
         finally:
             current_scope.reset(token)
 
+    def test_switcher_context_lists_authorized_stores_and_persists_selection(self):
+        manager = self.ok(0, "get", "/api/context")
+        self.assertEqual({store["id"] for store in manager["stores"]}, {self.stores[0]})
+        try:
+            selected = self.ok("super", "put", "/api/context", {"brand_id": self.brand_b, "store_id": self.stores[2]})
+            self.assertEqual(selected["active_brand"]["id"], self.brand_b)
+            self.assertEqual(selected["active_store"]["id"], self.stores[2])
+            with TestClient(server.app) as refreshed:
+                persisted = refreshed.get("/api/context", headers={"X-Session-Token": self.tokens["super"]})
+                self.assertEqual(persisted.status_code, 200)
+                self.assertEqual(persisted.json()["active_store"]["id"], self.stores[2])
+                old_order = refreshed.get("/api/orders/" + self.orders[0]["id"], headers={"X-Session-Token": self.tokens["super"]})
+                self.assertEqual(old_order.status_code, 404)
+            self.assertEqual(self.request("super", "put", "/api/context", {"brand_id": self.brand_a, "store_id": self.stores[2]}).status_code, 404)
+            self.assertEqual(self.ok("super", "get", "/api/context")["active_store"]["id"], self.stores[2])
+        finally:
+            self.ok("super", "put", "/api/context", {"brand_id": self.brand_a, "store_id": self.stores[0]})
+
     def test_parallel_request_contexts_do_not_bleed(self):
         def check(index):
             return [o["id"] for o in self.ok(index, "get", "/api/orders")["orders"]]
