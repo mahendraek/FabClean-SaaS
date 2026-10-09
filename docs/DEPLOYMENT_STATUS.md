@@ -23,4 +23,4 @@ Direct requests to the actual public domains failed at the cloud network proxy w
 
 After publication, check API health, unauthenticated operational requests returning 401, and the static page/assets. An authenticated store-scoped smoke check requires existing authorized test access. Production database contents, database-role permissions and migration logs have not been independently inspected; Render's live status alone does not establish those checks. Never run integration fixtures on production or disable RLS to bypass errors.
 
-No credentials or service environment values were printed or saved in the repository. PR #3 remains selected on `codex/pr-3-brand-store-switcher`; feature implementation has not started.
+No credentials or service environment values were printed or saved in the repository. PR #3 is implemented on `codex/pr-3-brand-store-switcher` and awaits review. It is not included in the confirmed production commit above.
