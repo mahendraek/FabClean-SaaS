@@ -4,6 +4,7 @@ Status: IMPLEMENTED — validated; awaiting review, not merged.
 Priority: P0
 PR: https://github.com/mahendraek/FabClean-SaaS/pull/4
 Implementation branch: `codex/pr-4-tenant-isolation`
+Published PR branch: `roadmap/tenant-data-isolation`; implementation commit `b4b621d`.
 
 ## Scope and resulting behavior
 

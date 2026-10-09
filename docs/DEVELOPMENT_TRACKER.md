@@ -7,6 +7,8 @@ Develop one item at a time. Keep future scopes in the backlog; do not implement 
 
 **PR #4 — tenant and store data isolation:** implementation and validation complete on `codex/pr-4-tenant-isolation`; awaiting review. Do not merge without explicit approval.
 
+Implementation commit: `b4b621d`. Pushed to `roadmap/tenant-data-isolation`; the remote PR #4 head ref was independently verified at that commit. This confirms branch publication, not GitHub review or merge status.
+
 The implementation adds forced PostgreSQL row-level security on 21 operational tables, scoped catalogs/settings in memory, store-scoped customer histories and metrics, validated related IDs, and scope-aware role checks. Unknown/inconsistent historical ownership is quarantined. See [migration and validation notes](roadmap/tenant-data-isolation.md).
 
 **Next:** PR #3 — brand/store experience, after PR #4 review. Rebase each future implementation on the accepted predecessor so security behavior and tests remain intact.
