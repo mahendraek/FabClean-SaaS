@@ -70,6 +70,7 @@ export default function Orders(){
   return <ScrollView style={{backgroundColor:colors.soft}} contentContainerStyle={s.page}>
     <View style={s.top}>
       <Pressable onPress={()=>router.push("/")} style={s.back}><ArrowLeft size={18} color={colors.ink}/><Text style={s.backText}>Home</Text></Pressable>
+      <Pressable onPress={()=>router.push("/handoffs")} style={s.back}><Text style={s.backText}>Store handoffs</Text></Pressable>
       <View style={s.brand}><Sparkle size={16} color={colors.primary}/><Text style={s.brandText}>FabClean</Text></View>
     </View>
 

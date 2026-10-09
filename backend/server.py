@@ -11,7 +11,7 @@ from contextlib import contextmanager
 
 import psycopg
 from psycopg.rows import dict_row
-from psycopg.errors import UniqueViolation, ForeignKeyViolation, InsufficientPrivilege, CheckViolation
+from psycopg.errors import UniqueViolation, ForeignKeyViolation, InsufficientPrivilege, CheckViolation, RaiseException
 from fastapi import FastAPI, HTTPException, Header, Request
 from fastapi.responses import Response
 from fastapi.responses import JSONResponse
@@ -23,6 +23,7 @@ from sendgrid.helpers.mail import Mail
 
 from models import Service, Order, OrderCreate, Customer, CustomerCreate
 from seed import SERVICES
+from store_operations import STORE_TYPES, validate_hierarchy, next_handoff_status, work_manifest, install_store_operations
 from tenant_scope import current_scope, ScopedMemoryDict, configure_connection, migration_installed, install_isolation
 
 app = FastAPI(title="FabClean API", version="1.2.0")
@@ -119,6 +120,10 @@ async def unavailable_reference(request, exc):
 async def invalid_ownership(request, exc):
     return JSONResponse(status_code=403, content={"detail": "Record ownership is not permitted"})
 
+@app.exception_handler(RaiseException)
+async def custody_conflict(request, exc):
+    return JSONResponse(status_code=409, content={"detail": "Finish or cancel the open handoff before changing items or closing the order"})
+
 @app.middleware("http")
 async def isolate_request(request: Request, call_next):
     """All operational routes require a validated session and active store.
@@ -159,6 +164,7 @@ def init_db():
     with db(maintenance=True) as conn, conn.transaction():
         conn.execute("SELECT pg_advisory_xact_lock(471004)")
         if migration_installed(conn):
+            install_store_operations(conn)
             return
         conn.execute("""
             CREATE TABLE IF NOT EXISTS app_settings (
@@ -655,6 +661,8 @@ def init_db():
         # orders remain quarantined rather than inheriting default ownership.
         conn.execute("UPDATE services SET payload=jsonb_set(payload,'{location_id}','\"main\"'::jsonb) WHERE payload->>'business_id'='fabclean' AND NOT payload ? 'location_id'")
         install_isolation(conn)
+        if migration_installed(conn):
+            install_store_operations(conn)
 
 @app.on_event("startup")
 def startup():
@@ -2471,7 +2479,7 @@ def validate_staff_target(conn, actor, staff_id):
 def list_brand_stores(brand_id: str = "", include_inactive: bool = True, x_session_token: str | None = Header(default=None)):
     staff=get_current_staff(x_session_token)
     if not staff: raise HTTPException(401,"Staff sign-in required")
-    requested=brand_id or staff.get("business_id") or "fabclean"
+    requested=brand_id or staff.get("active_brand_id") or staff.get("business_id") or "fabclean"
     require_brand_admin_for(requested,x_session_token)
     if not DATABASE_URL: return {"stores":[{"id":"main","brand_id":requested,"store_code":"MAIN","name":"Main Store","store_type":"regular","active":True}]}
     with db() as conn:
@@ -2479,56 +2487,165 @@ def list_brand_stores(brand_id: str = "", include_inactive: bool = True, x_sessi
         rows=conn.execute(sql,(requested,)).fetchall()
     return {"stores":[dict(r) for r in rows]}
 
+def lock_brand_operations(conn, brand_id):
+    # Serialize hierarchy, routing and deactivation within a brand. Hash
+    # collisions only add serialization; they cannot cross tenant scope.
+    conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,471005))", (brand_id,))
+
+
+def validate_store_change(conn, brand_id, store_id, data):
+    if not isinstance(data.get("store_type", "regular"), str) or data.get("store_type", "regular") not in STORE_TYPES:
+        raise HTTPException(400, "Invalid store type")
+    if not all(isinstance(data.get(key), str) and data[key].strip() for key in ("name", "store_code")):
+        raise HTTPException(400, "Store name and code are required")
+    if not isinstance(data.get("active", True), bool):
+        raise HTTPException(400, "Active must be true or false")
+    if data.get("parent_store_id") is not None and not isinstance(data["parent_store_id"], str):
+        raise HTTPException(400, "Parent store must be a store ID")
+    rows = conn.execute("SELECT id,parent_store_id,active FROM stores WHERE brand_id=%s", (brand_id,)).fetchall()
+    try:
+        validate_hierarchy({row["id"]: dict(row) for row in rows}, store_id, data.get("parent_store_id"))
+    except ValueError as error:
+        raise HTTPException(400, str(error))
+    if not data.get("active", True):
+        if any(row["active"] and row.get("parent_store_id") == store_id for row in rows):
+            raise HTTPException(409, "Reassign or deactivate active child stores first")
+        open_count = conn.execute("SELECT open_handoff_count FROM stores WHERE id=%s AND brand_id=%s", (store_id, brand_id)).fetchone()
+        if open_count and open_count["open_handoff_count"]:
+            raise HTTPException(409, "Finish open handoffs before deactivating this store")
+
+
 @app.post("/api/brand/stores")
 def create_store(payload: dict, x_session_token: str | None = Header(default=None)):
-    staff=get_current_staff(x_session_token)
-    if not staff: raise HTTPException(401,"Staff sign-in required")
-    requested_brand=str(payload.get("brand_id") or staff.get("business_id") or "").strip()
-    require_brand_admin_for(requested_brand,x_session_token)
-    name=str(payload.get("name","")).strip(); code=str(payload.get("store_code","")).strip().upper()
-    if not requested_brand or not name or not code: raise HTTPException(400,"Brand, store name and store code are required")
-    parent_id=payload.get("parent_store_id") or None
-    if not DATABASE_URL: return {"id":str(uuid.uuid4()),"brand_id":requested_brand,"store_code":code,"name":name,**payload}
-    store_id=str(uuid.uuid4())
-    with db() as conn:
-        if parent_id:
-            parent=conn.execute("SELECT id FROM stores WHERE id=%s AND brand_id=%s",(parent_id,requested_brand)).fetchone()
-            if not parent: raise HTTPException(400,"Parent store must belong to the same brand")
+    staff = get_current_staff(x_session_token)
+    if not staff: raise HTTPException(401, "Staff sign-in required")
+    brand_id = str(payload.get("brand_id") or staff.get("active_brand_id") or staff.get("business_id") or "").strip()
+    require_brand_admin_for(brand_id, x_session_token)
+    if not DATABASE_URL: raise HTTPException(503, "Store administration requires PostgreSQL")
+    store_id = str(uuid.uuid4())
+    data = {**payload, "name": payload.get("name", ""), "store_code": payload.get("store_code", "")}
+    with db() as conn, conn.transaction():
+        lock_brand_operations(conn, brand_id)
+        if not conn.execute("SELECT id FROM brands WHERE id=%s AND status='active'", (brand_id,)).fetchone():
+            raise HTTPException(404, "Active brand not found")
+        validate_store_change(conn, brand_id, store_id, data)
         try:
-            row=conn.execute(
+            row = conn.execute(
                 """INSERT INTO stores (id,brand_id,store_code,name,parent_store_id,store_type,address_line1,address_line2,city,state,postal_code,country,latitude,longitude,timezone,phone,email,active)
                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
-                (store_id,requested_brand,code,name,parent_id,str(payload.get("store_type","regular")),str(payload.get("address_line1","")),str(payload.get("address_line2","")),str(payload.get("city","")),str(payload.get("state","")),str(payload.get("postal_code","")),str(payload.get("country","US")),payload.get("latitude"),payload.get("longitude"),str(payload.get("timezone","America/Chicago")),str(payload.get("phone","")),str(payload.get("email","")),bool(payload.get("active",True))),
+                (store_id, brand_id, data["store_code"].strip().upper(), data["name"].strip(), data.get("parent_store_id") or None, data.get("store_type", "regular"), str(data.get("address_line1", "")), str(data.get("address_line2", "")), str(data.get("city", "")), str(data.get("state", "")), str(data.get("postal_code", "")), str(data.get("country", "US")), data.get("latitude"), data.get("longitude"), str(data.get("timezone", "America/Chicago")), str(data.get("phone", "")), str(data.get("email", "")), data.get("active", True)),
             ).fetchone()
-        except Exception:
-            raise HTTPException(409,"Store code already exists in this brand")
-    record_platform_audit(staff,"store_created",brand_id=requested_brand,store_id=store_id,metadata={"name":name,"store_code":code})
+        except UniqueViolation:
+            raise HTTPException(409, "Store code already exists in this brand")
+    record_platform_audit(staff, "store_created", brand_id=brand_id, store_id=store_id, metadata={"name": data["name"], "store_code": data["store_code"]})
     return dict(row)
+
 
 @app.put("/api/brand/stores/{store_id}")
 def update_store(store_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
-    staff=get_current_staff(x_session_token)
-    if not staff: raise HTTPException(401,"Staff sign-in required")
-    if not DATABASE_URL:
-        require_brand_admin_for("fabclean", x_session_token)
-        if store_id != "main": raise HTTPException(404, "Store not found")
-        return {**payload,"id":store_id,"brand_id":"fabclean"}
-    with db() as conn:
-        current=conn.execute("SELECT * FROM stores WHERE id=%s",(store_id,)).fetchone()
-        if not current: raise HTTPException(404,"Store not found")
-        require_brand_admin_for(current["brand_id"],x_session_token)
-        d=dict(current); d.update(payload)
-        parent_id=d.get("parent_store_id") or None
-        if parent_id:
-            parent=conn.execute("SELECT id FROM stores WHERE id=%s AND brand_id=%s",(parent_id,current["brand_id"])).fetchone()
-            if not parent or parent_id==store_id: raise HTTPException(400,"Invalid parent store")
-        row=conn.execute(
-            """UPDATE stores SET store_code=%s,name=%s,parent_store_id=%s,store_type=%s,address_line1=%s,address_line2=%s,city=%s,state=%s,postal_code=%s,country=%s,latitude=%s,longitude=%s,timezone=%s,phone=%s,email=%s,active=%s,updated_at=NOW()
-               WHERE id=%s RETURNING *""",
-            (str(d["store_code"]).strip().upper(),str(d["name"]).strip(),parent_id,str(d.get("store_type","regular")),str(d.get("address_line1","")),str(d.get("address_line2","")),str(d.get("city","")),str(d.get("state","")),str(d.get("postal_code","")),str(d.get("country","US")),d.get("latitude"),d.get("longitude"),str(d.get("timezone","America/Chicago")),str(d.get("phone","")),str(d.get("email","")),bool(d.get("active",True)),store_id),
-        ).fetchone()
-    record_platform_audit(staff,"store_updated",brand_id=current["brand_id"],store_id=store_id)
+    staff = get_current_staff(x_session_token)
+    if not staff: raise HTTPException(401, "Staff sign-in required")
+    if not DATABASE_URL: raise HTTPException(503, "Store administration requires PostgreSQL")
+    with db() as conn, conn.transaction():
+        current = conn.execute("SELECT * FROM stores WHERE id=%s", (store_id,)).fetchone()
+        if not current: raise HTTPException(404, "Store not found")
+        require_brand_admin_for(current["brand_id"], x_session_token)
+        lock_brand_operations(conn, current["brand_id"])
+        current = conn.execute("SELECT * FROM stores WHERE id=%s FOR UPDATE", (store_id,)).fetchone()
+        if "brand_id" in payload and payload["brand_id"] != current["brand_id"]:
+            raise HTTPException(400, "A store cannot move to another brand")
+        data = {**dict(current), **payload}
+        validate_store_change(conn, current["brand_id"], store_id, data)
+        try:
+            row = conn.execute(
+                """UPDATE stores SET store_code=%s,name=%s,parent_store_id=%s,store_type=%s,address_line1=%s,address_line2=%s,city=%s,state=%s,postal_code=%s,country=%s,latitude=%s,longitude=%s,timezone=%s,phone=%s,email=%s,active=%s,updated_at=NOW()
+                   WHERE id=%s RETURNING *""",
+                (str(data["store_code"]).strip().upper(), str(data["name"]).strip(), data.get("parent_store_id") or None, data.get("store_type", "regular"), str(data.get("address_line1", "")), str(data.get("address_line2", "")), str(data.get("city", "")), str(data.get("state", "")), str(data.get("postal_code", "")), str(data.get("country", "US")), data.get("latitude"), data.get("longitude"), str(data.get("timezone", "America/Chicago")), str(data.get("phone", "")), str(data.get("email", "")), data.get("active", True), store_id),
+            ).fetchone()
+        except UniqueViolation:
+            raise HTTPException(409, "Store code already exists in this brand")
+    record_platform_audit(staff, "store_updated", brand_id=current["brand_id"], store_id=store_id)
     return dict(row)
+
+
+@app.get("/api/handoff-destinations")
+def handoff_destinations(x_session_token: str | None = Header(default=None)):
+    staff = require_permission("orders", x_session_token)
+    brand_id, store_id = operational_scope(staff)
+    if not DATABASE_URL: return {"stores": []}
+    with db() as conn:
+        rows = conn.execute("SELECT id,name,store_code,store_type,parent_store_id FROM stores WHERE brand_id=%s AND active=TRUE AND id<>%s ORDER BY name", (brand_id, store_id)).fetchall()
+    return {"stores": [dict(row) for row in rows]}
+
+
+@app.get("/api/handoffs")
+def list_handoffs(x_session_token: str | None = Header(default=None)):
+    staff = require_permission("orders", x_session_token)
+    operational_scope(staff)
+    if not DATABASE_URL: return {"handoffs": []}
+    with db() as conn:
+        rows = conn.execute("SELECT * FROM store_handoffs ORDER BY created_at DESC").fetchall()
+    return {"handoffs": [dict(row) for row in rows]}
+
+
+def custody_event(staff, store_id, action, notes):
+    return {"id": str(uuid.uuid4()), "action": action, "staff_id": staff["id"], "staff_name": staff.get("name", ""), "store_id": store_id, "at": datetime.now(timezone.utc).isoformat(), "notes": notes}
+
+
+@app.post("/api/handoffs")
+def dispatch_handoff(payload: dict, x_session_token: str | None = Header(default=None)):
+    staff = require_permission("orders", x_session_token)
+    brand_id, store_id = operational_scope(staff)
+    if not DATABASE_URL: raise HTTPException(503, "Cross-store handoffs require PostgreSQL")
+    destination_id = str(payload.get("destination_store_id") or "").strip()
+    order_id = str(payload.get("order_id") or "").strip()
+    notes = str(payload.get("notes") or "").strip()
+    if not destination_id or not order_id or destination_id == store_id:
+        raise HTTPException(400, "Select an order and a different destination store")
+    if len(notes) > 1000: raise HTTPException(400, "Handoff notes must be at most 1000 characters")
+    with db() as conn, conn.transaction():
+        lock_brand_operations(conn, brand_id)
+        destination = conn.execute("SELECT id,name FROM stores WHERE id=%s AND brand_id=%s AND active=TRUE", (destination_id, brand_id)).fetchone()
+        if not destination: raise HTTPException(404, "Destination store unavailable in this brand")
+        source = conn.execute("SELECT name FROM stores WHERE id=%s AND brand_id=%s AND active=TRUE", (store_id, brand_id)).fetchone()
+        if not source: raise HTTPException(409, "Source store is no longer active")
+        order = conn.execute("SELECT payload FROM orders WHERE id=%s FOR UPDATE", (order_id,)).fetchone()
+        if not order: raise HTTPException(404, "Order not found")
+        order = order["payload"]
+        if order.get("status") in ("completed", "collected", "cancelled", "delivered", "picked_up"):
+            raise HTTPException(409, "A closed order cannot be dispatched")
+        manifest = work_manifest(order)
+        if not manifest: raise HTTPException(409, "An order needs items before dispatch")
+        event = custody_event(staff, store_id, "dispatch", notes)
+        try:
+            row = conn.execute("""INSERT INTO store_handoffs(id,business_id,source_store_id,destination_store_id,order_id,order_number,source_name,destination_name,manifest,status,events)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,'dispatched',%s::jsonb) RETURNING *""",
+                (str(uuid.uuid4()), brand_id, store_id, destination_id, order_id, order["order_number"], source["name"], destination["name"], json.dumps(manifest), json.dumps([event]))).fetchone()
+        except UniqueViolation:
+            raise HTTPException(409, "This order already has an open handoff")
+    return dict(row)
+
+
+@app.post("/api/handoffs/{handoff_id}/actions")
+def act_on_handoff(handoff_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
+    staff = require_permission("orders", x_session_token)
+    brand_id, store_id = operational_scope(staff)
+    if not DATABASE_URL: raise HTTPException(503, "Cross-store handoffs require PostgreSQL")
+    action = str(payload.get("action") or "")
+    notes = str(payload.get("notes") or "").strip()
+    if len(notes) > 1000: raise HTTPException(400, "Handoff notes must be at most 1000 characters")
+    with db() as conn, conn.transaction():
+        lock_brand_operations(conn, brand_id)
+        row = conn.execute("SELECT * FROM store_handoffs WHERE id=%s FOR UPDATE", (handoff_id,)).fetchone()
+        if not row: raise HTTPException(404, "Handoff not found")
+        try:
+            status = next_handoff_status(row, action, store_id)
+        except ValueError as error: raise HTTPException(400, str(error))
+        except PermissionError as error: raise HTTPException(403, str(error))
+        except RuntimeError as error: raise HTTPException(409, str(error))
+        events = row["events"] + [custody_event(staff, store_id, action, notes)]
+        updated = conn.execute("UPDATE store_handoffs SET status=%s,events=%s::jsonb,updated_at=NOW() WHERE id=%s RETURNING *", (status, json.dumps(events), handoff_id)).fetchone()
+    return dict(updated)
 
 @app.get("/api/admin/staff/{staff_id}/roles")
 def list_staff_roles(staff_id: str, x_session_token: str | None = Header(default=None)):
@@ -2571,7 +2688,7 @@ def replace_staff_roles(staff_id: str, payload: dict, x_session_token: str | Non
             if scope=="platform" and role!="super_admin": raise HTTPException(400,"Only SuperAdmin can use platform scope")
             if not has_role(actor,"super_admin") and brand_id!=(actor.get("active_brand_id") or actor.get("business_id")): raise HTTPException(403,"Cannot assign another brand")
             if store_id:
-                store=conn.execute("SELECT brand_id FROM stores WHERE id=%s",(store_id,)).fetchone()
+                store=conn.execute("SELECT brand_id FROM stores WHERE id=%s AND active=TRUE",(store_id,)).fetchone()
                 if not store or store["brand_id"]!=brand_id: raise HTTPException(400,"Store must belong to assigned brand")
         conn.execute("DELETE FROM user_role_assignments WHERE user_id=%s",(staff_id,))
         saved=[]

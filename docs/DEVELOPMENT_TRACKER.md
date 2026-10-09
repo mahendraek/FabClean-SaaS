@@ -13,7 +13,9 @@ The implementation adds forced PostgreSQL row-level security on 21 operational t
 
 **PR #3 — brand/store experience:** merged into `main` at `cd99661` with explicit user authorization; implementation `ae6d1bb` on `codex/pr-3-brand-store-switcher`, based on merged `main`. Shared header, confirmed store switching, screen refresh, native secure sessions and authorized relogin restoration are implemented. Validation: 27 backend tests, 9 frontend tests, desktop/mobile-web browser checks and 26-route web export passed. Both Render services are live at `cd99661`, with health, unauthenticated authorization and published bundle checks passing; native-device validation remains outstanding. See [implementation notes](roadmap/brand-store-experience.md).
 
-**Next:** PR #5 — store hierarchy and operational handoffs. Rebase each future implementation on the accepted predecessor so security behavior and tests remain intact.
+**Active: PR #5 — store hierarchy and operational handoffs:** implementation `324e911` on `codex/pr-5-store-hierarchy`, based on merged main `47e67a9`. Hierarchy/cycle/deactivation guards, scoped staff assignments, an immutable participant-scoped custody journal and a web/mobile handoff screen are implemented. Validation: 38 backend tests, 12 frontend unit tests, real local API browser flows and 27-route web export. Awaiting review; no merge/deployment authorized for this PR. See [design and validation](roadmap/store-hierarchy.md).
+
+**Next after #5 acceptance:** PR #6 — security, testing and performance. Rebase each future implementation on the accepted predecessor so security behavior and tests remain intact.
 
 ## Sequential PR queue
 
@@ -21,7 +23,7 @@ The implementation adds forced PostgreSQL row-level security on 21 operational t
 | --- | --- | --- | --- | --- | --- |
 | 1 | [#4](https://github.com/mahendraek/FabClean-SaaS/pull/4) | P0 | [Tenant/store data isolation](roadmap/tenant-data-isolation.md) | Merged at `971f2bc`; Render live at `a800a73` | Existing context persistence |
 | 2 | [#3](https://github.com/mahendraek/FabClean-SaaS/pull/3) | P0 | [Shared brand/store switcher](roadmap/brand-store-experience.md) | Merged at `cd99661`; Render live and smoke checks passed | #4 |
-| 3 | [#5](https://github.com/mahendraek/FabClean-SaaS/pull/5) | P1 | [Store hierarchy and operational handoffs](roadmap/store-hierarchy.md) | Planned | #4, #3 |
+| 3 | [#5](https://github.com/mahendraek/FabClean-SaaS/pull/5) | P1 | [Store hierarchy and operational handoffs](roadmap/store-hierarchy.md) | Implemented and validated; awaiting review | #4, #3 |
 | 4 | [#6](https://github.com/mahendraek/FabClean-SaaS/pull/6) | P1 | [Security, testing and performance](roadmap/security-performance.md) | Planned | #4, #3, #5 |
 | 5 | [#7](https://github.com/mahendraek/FabClean-SaaS/pull/7) | P1 | [Platform administration/onboarding](roadmap/platform-management.md) | Planned | #4, #6 |
 | 6 | [#8](https://github.com/mahendraek/FabClean-SaaS/pull/8) | P2 | [Brand defaults/store overrides](roadmap/configuration-inheritance.md) | Planned | #4, #5, #7 |
