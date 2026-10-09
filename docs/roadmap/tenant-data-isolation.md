@@ -1,6 +1,6 @@
 # Tenant and store data isolation
 
-Status: MERGED — validated and merged into `main` at `971f2bc` with user approval. Render deployment remains pending authenticated verification.
+Status: MERGED — validated and merged into `main` at `971f2bc` with user approval. Both Render services report live deployments of `a800a73`; public endpoint checks remain blocked by cloud network policy. See [deployment status](../DEPLOYMENT_STATUS.md).
 Priority: P0
 PR: https://github.com/mahendraek/FabClean-SaaS/pull/4
 Implementation branch: `codex/pr-4-tenant-isolation`

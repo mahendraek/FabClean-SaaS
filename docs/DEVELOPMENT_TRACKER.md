@@ -5,7 +5,7 @@ Develop one item at a time. Keep future scopes in the backlog; do not implement 
 
 ## Current work
 
-**PR #4 — tenant and store data isolation:** merged into `main` at `971f2bc` with explicit user authorization. The remote main ancestry was verified. Render deployment is pending authenticated verification; see [deployment status](DEPLOYMENT_STATUS.md).
+**PR #4 — tenant and store data isolation:** merged into `main` at `971f2bc` with explicit user authorization. The remote main ancestry was verified. Both Render services report live deployments of `a800a73`; public endpoint verification is pending network publication; see [deployment status](DEPLOYMENT_STATUS.md).
 
 Implementation commit: `b4b621d`. Pushed to `roadmap/tenant-data-isolation`; the remote PR #4 head ref was independently verified at that commit. This confirms branch publication, not GitHub review or merge status.
 
@@ -17,7 +17,7 @@ The implementation adds forced PostgreSQL row-level security on 21 operational t
 
 | Order | PR | Priority | Scope | Development status | Depends on |
 | --- | --- | --- | --- | --- | --- |
-| 1 | [#4](https://github.com/mahendraek/FabClean-SaaS/pull/4) | P0 | [Tenant/store data isolation](roadmap/tenant-data-isolation.md) | Merged at `971f2bc`; deployment pending | Existing context persistence |
+| 1 | [#4](https://github.com/mahendraek/FabClean-SaaS/pull/4) | P0 | [Tenant/store data isolation](roadmap/tenant-data-isolation.md) | Merged at `971f2bc`; Render live at `a800a73` | Existing context persistence |
 | 2 | [#3](https://github.com/mahendraek/FabClean-SaaS/pull/3) | P0 | [Shared brand/store switcher](roadmap/brand-store-experience.md) | Selected; new branch prepared | #4 |
 | 3 | [#5](https://github.com/mahendraek/FabClean-SaaS/pull/5) | P1 | [Store hierarchy and operational handoffs](roadmap/store-hierarchy.md) | Planned | #4, #3 |
 | 4 | [#6](https://github.com/mahendraek/FabClean-SaaS/pull/6) | P1 | [Security, testing and performance](roadmap/security-performance.md) | Planned | #4, #3, #5 |
