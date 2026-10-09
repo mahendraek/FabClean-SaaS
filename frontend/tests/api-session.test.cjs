@@ -55,3 +55,28 @@ for (const [label, saved, allowed, expected] of [
   vm.runInNewContext(selectionSource, { exports, require: name => name === './api' ? apiModule : name === 'react-native' ? { StyleSheet: { create: x => x } } : name === './theme' ? { colors: {} } : {} });
   await exports.restoreSelection(); assert.equal(updates.length, expected);
 });
+test('sign-out revokes the server session before clearing persisted credentials', async () => {
+  const { api, calls, values } = await setup();
+  await api.setStoredSession({ id: 'u1' }, 'token');
+  await api.signOut();
+  assert.equal(calls[0][0], 'http://localhost:8000/api/auth/sign-out');
+  assert.equal(calls[0][1].headers['X-Session-Token'], 'token');
+  assert.equal(values.size, 0);
+});
+test('failed revocation keeps the session available for retry', async () => {
+  const { api, sandbox } = await setup();
+  await api.setStoredSession({ id: 'u1' }, 'token');
+  sandbox.fetch = async () => { throw new Error('Offline'); };
+  await assert.rejects(api.signOut(), /Offline/);
+  assert.equal(api.getStoredToken(), 'token');
+});
+test('operational requests pin the displayed context and clear it on session change', async () => {
+  const { api, sandbox, calls } = await setup();
+  await api.setStoredSession({ id: 'u1' }, 'token');
+  sandbox.fetch = async (...args) => { calls.push(args); return { ok: true, text: async () => '{"active_brand":{"id":"b"},"active_store":{"id":"s"}}' }; };
+  await api.api.get('/context'); await api.api.post('/orders', {});
+  assert.equal(calls[1][1].headers['X-Active-Store-ID'], 's');
+  assert.equal(calls[1][1].headers['X-Active-Brand-ID'], 'b');
+  await api.setStoredSession({ id: 'u2' }, 'new'); await api.api.get('/orders');
+  assert.equal(calls[2][1].headers['X-Active-Store-ID'], undefined);
+});

@@ -97,7 +97,7 @@ export default function Orders(){
       <Text style={s.selectedTitle}>{selected.order_number}</Text>
       <Text style={s.meta}>{selected.customer.name} · {selected.customer.phone}</Text>
       <View style={s.detailRow}><Text style={s.status}>{pretty(selected.status)}</Text><Text style={s.amount}>{"$"+selected.total.toFixed(2)}</Text></View>
-      <Text style={s.meta}>Barcode: {selected.barcode_value}</Text><Pressable style={s.openBtn} onPress={()=>router.push("/order-detail?id="+encodeURIComponent(selected.id))}><Text style={s.openBtnText}>Open Order Details</Text></Pressable>
+      <Text style={s.meta}>Barcode: {selected.barcode_value}</Text><Pressable style={s.openBtn} onPress={()=>router.push({pathname:"/order-detail",params:{id:selected.id}})}><Text style={s.openBtnText}>Open Order Details</Text></Pressable>
     </View>:null}
 
     <View style={s.summary}>
@@ -113,7 +113,7 @@ export default function Orders(){
         ? <View style={s.empty}><Package size={36} color={colors.muted}/><Text style={s.emptyTitle}>Loading orders…</Text></View>
         : filtered.length===0 && !err
         ? <View style={s.empty}><Package size={36} color={colors.muted}/><Text style={s.emptyTitle}>No orders found</Text><Text style={s.meta}>Create an order or change your search.</Text></View>
-        : filtered.map(o=><Pressable key={o.id} onPress={()=>router.push("/order-detail?id="+encodeURIComponent(o.id))} style={s.row}>
+        : filtered.map(o=><Pressable key={o.id} onPress={()=>router.push({pathname:"/order-detail",params:{id:o.id}})} style={s.row}>
             <View style={s.orderMain}><Text style={s.orderNo}>{o.order_number}</Text><Text style={s.meta}>{o.customer.name} · {o.customer.phone}</Text></View>
             <View style={s.col}><Text style={s.label}>Status</Text><Text style={s.status}>{pretty(o.status)}</Text></View>
             <View style={s.col}><Text style={s.label}>Payment</Text><Text style={[s.pay,o.payment_status==="paid"&&{color:colors.success}]}>{pretty(o.payment_status)}</Text></View>

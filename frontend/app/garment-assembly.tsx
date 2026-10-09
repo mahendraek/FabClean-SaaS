@@ -52,7 +52,7 @@ export default function GarmentAssembly(){
 
   if(!order)return <View style={s.loading}><Text>{err||"Loading assembly…"}</Text></View>;
   return <ScrollView style={{backgroundColor:colors.soft}} contentContainerStyle={s.page}>
-    <View style={s.top}><Pressable onPress={()=>router.push("/order-detail?id="+encodeURIComponent(id))} style={s.back}><ArrowLeft size={18} color={colors.ink}/><Text style={s.backText}>Order</Text></Pressable><View style={s.brand}><Sparkle size={16} color={colors.primary}/><Text style={s.brandText}>FabClean Assembly</Text></View></View>
+    <View style={s.top}><Pressable onPress={()=>router.push({pathname:"/order-detail",params:{id:id}})} style={s.back}><ArrowLeft size={18} color={colors.ink}/><Text style={s.backText}>Order</Text></Pressable><View style={s.brand}><Sparkle size={16} color={colors.primary}/><Text style={s.brandText}>FabClean Assembly</Text></View></View>
     <View style={s.header}><View><Text style={s.kicker}>GARMENT ASSEMBLY</Text><Text style={s.title}>{order.order_number}</Text><Text style={s.sub}>{order.customer.name} · Scan every garment before completing the order.</Text></View><View style={s.progress}><Text style={s.progressValue}>{assembled} / {garments.length}</Text><Text style={s.progressLabel}>assembled</Text></View></View>
 
     <View style={s.scanPanel}><View style={s.scanBox}><Barcode size={22} color={colors.primary}/><TextInput autoFocus value={scan} onChangeText={setScan} onSubmitEditing={scanGarment} placeholder="Scan or enter garment code" autoCapitalize="characters" style={s.input}/></View><Pressable onPress={scanGarment} style={s.scanBtn}><Text style={s.scanText}>Scan</Text></Pressable></View>

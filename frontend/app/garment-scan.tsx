@@ -53,7 +53,7 @@ export default function GarmentScan(){
     {result?<View style={s.result}>
       <View style={s.success}><CheckCircle size={22} color={colors.success}/><View><Text style={s.successTitle}>{result.garment.garment_code} recorded</Text><Text style={s.meta}>{pretty(result.garment.last_stage)}</Text></View></View>
       <View style={s.details}><View><Text style={s.smallLabel}>Order</Text><Text style={s.value}>{result.order?.order_number||"—"}</Text></View><View><Text style={s.smallLabel}>Customer</Text><Text style={s.value}>{result.order?.customer?.name||"—"}</Text></View><View><Text style={s.smallLabel}>Garment</Text><Text style={s.value}>{result.garment.service_name}</Text></View></View>
-      <View style={s.actions}><Pressable onPress={()=>router.push("/order-detail?id="+encodeURIComponent(result.garment.order_id))} style={s.secondary}><Text style={s.secondaryText}>Open Order</Text></Pressable>{stage==="assembly"?<Pressable onPress={()=>router.push("/garment-assembly?id="+encodeURIComponent(result.garment.order_id))} style={s.primary}><Text style={s.primaryText}>Open Assembly</Text></Pressable>:null}</View>
+      <View style={s.actions}><Pressable onPress={()=>router.push({pathname:"/order-detail",params:{id:result.garment.order_id}})} style={s.secondary}><Text style={s.secondaryText}>Open Order</Text></Pressable>{stage==="assembly"?<Pressable onPress={()=>router.push({pathname:"/garment-assembly",params:{id:result.garment.order_id}})} style={s.primary}><Text style={s.primaryText}>Open Assembly</Text></Pressable>:null}</View>
     </View>:null}
   </ScrollView>;
 }

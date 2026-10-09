@@ -118,7 +118,7 @@ export default function Reports(){
     </View>
 
     <View style={s.panel}><View style={s.panelHead}><Text style={s.sectionTitle}>Outstanding balances</Text><Text style={s.meta}>{outstandingRows.length} orders</Text></View>
-      {outstandingRows.length===0?<Text style={s.meta}>No outstanding balances in this period.</Text>:outstandingRows.map(o=><Pressable key={o.id} style={s.row} onPress={()=>router.push("/order-detail?id="+encodeURIComponent(o.id))}><View style={{flex:1}}><Text style={s.rowTitle}>{o.order_number} · {o.customer?.name}</Text><Text style={s.meta}>{String(o.created_at||"").slice(0,10)} · {o.status.replaceAll("_"," ")}</Text></View><View style={{alignItems:"flex-end"}}><Text style={s.amount}>{money(Number(ledgers[o.id]?.balance_due||0))}</Text><Text style={s.meta}>of {money(o.total)}</Text></View></Pressable>)}
+      {outstandingRows.length===0?<Text style={s.meta}>No outstanding balances in this period.</Text>:outstandingRows.map(o=><Pressable key={o.id} style={s.row} onPress={()=>router.push({pathname:"/order-detail",params:{id:o.id}})}><View style={{flex:1}}><Text style={s.rowTitle}>{o.order_number} · {o.customer?.name}</Text><Text style={s.meta}>{String(o.created_at||"").slice(0,10)} · {o.status.replaceAll("_"," ")}</Text></View><View style={{alignItems:"flex-end"}}><Text style={s.amount}>{money(Number(ledgers[o.id]?.balance_due||0))}</Text><Text style={s.meta}>of {money(o.total)}</Text></View></Pressable>)}
     </View>
   </ScrollView>
 }

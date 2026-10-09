@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 
 import { useRouter } from "expo-router";
-import { Image, ScrollView, StyleSheet, Text, Pressable, View } from "react-native";
+import { Alert, Image, ScrollView, StyleSheet, Text, Pressable, View } from "react-native";
 import { CheckCircle, Clock, Package, Sneaker, Sparkle, Truck } from "phosphor-react-native";
 import { colors } from "@/src/theme";
-import { api, getStoredStaff, setStoredSession } from "@/src/api";
+import { api, getStoredStaff, signOut } from "@/src/api";
 import { serviceImages } from "@/src/service-media";
 
 const services = [
@@ -30,7 +30,7 @@ function Nav({settings}:{settings:any}){
       <Pressable onPress={()=>router.push("/customers")}><Text style={s.navText}>Customers</Text></Pressable>
       {settings.pickup_enabled||settings.delivery_enabled?<Pressable onPress={()=>router.push("/pickup-schedule")}><Text style={s.navText}>Pickup / Delivery Schedule</Text></Pressable>:null}
       <Pressable onPress={()=>router.push("/services")}><Text style={s.navText}>Services</Text></Pressable>
-      {canAdmin?<Pressable onPress={()=>router.push("/admin")}><Text style={s.navText}>Admin</Text></Pressable>:null}{staff?<Pressable onPress={()=>{void setStoredSession(null,"").then(()=>router.replace("/sign-in"));}}><Text style={s.navText}>{staff.name} · Sign out</Text></Pressable>:<Pressable onPress={()=>router.push("/sign-in")}><Text style={s.navText}>Staff Sign In</Text></Pressable>}
+      {canAdmin?<Pressable onPress={()=>router.push("/admin")}><Text style={s.navText}>Admin</Text></Pressable>:null}{staff?<Pressable onPress={()=>{void signOut().then(()=>router.replace("/sign-in")).catch(error=>Alert.alert("Sign out failed",error.message));}}><Text style={s.navText}>{staff.name} · Sign out</Text></Pressable>:<Pressable onPress={()=>router.push("/sign-in")}><Text style={s.navText}>Staff Sign In</Text></Pressable>}
     </View>
   </View>
 }
@@ -80,7 +80,7 @@ export default function Home() {
       <Pressable onPress={()=>router.push("/services")}><Text style={s.link}>View pricing →</Text></Pressable>
     </View>
     <View style={s.grid}>
-      {services.map(({name,image,copy}) => <Pressable key={name} style={s.card} onPress={() => router.push("/services?category="+encodeURIComponent(name))}>
+      {services.map(({name,image,copy}) => <Pressable key={name} style={s.card} onPress={() => router.push({pathname:"/services",params:{category:name}})}>
         <Image source={{uri:image}} style={s.cardImage} resizeMode="cover"/>
         <View style={s.cardBody}><Text style={s.cardTitle}>{name}</Text><Text style={s.cardCopy}>{copy}</Text></View>
       </Pressable>)}
@@ -114,7 +114,7 @@ const s=StyleSheet.create({
   heroCopy:{flex:1,minWidth:280,justifyContent:"center"},badge:{alignSelf:"flex-start",flexDirection:"row",gap:6,alignItems:"center",backgroundColor:colors.primarySoft,paddingHorizontal:10,paddingVertical:7,borderRadius:999},badgeText:{fontSize:12,fontWeight:"700",color:colors.primaryDark},
   eyebrow:{fontSize:12,fontWeight:"900",letterSpacing:1.8,color:colors.primary,marginTop:24},title:{fontSize:38,lineHeight:45,fontWeight:"900",color:colors.ink,marginTop:8,maxWidth:680},subtitle:{fontSize:17,lineHeight:27,color:colors.muted,marginTop:14,maxWidth:650},
   actions:{flexDirection:"row",flexWrap:"wrap",gap:10,marginTop:24},primary:{backgroundColor:colors.primary,borderRadius:14,paddingVertical:14,paddingHorizontal:20},primaryText:{color:"#fff",fontWeight:"800"},secondary:{backgroundColor:colors.surface,borderWidth:1,borderColor:colors.border,borderRadius:14,paddingVertical:14,paddingHorizontal:20},secondaryText:{color:colors.primary,fontWeight:"800"},
-  heroVisual:{width:360,minHeight:300,borderRadius:26,overflow:"hidden",position:"relative",backgroundColor:colors.softBlue},heroImage:{width:"100%",height:"100%",position:"absolute"},heroShade:{...StyleSheet.absoluteFillObject,backgroundColor:"rgba(4,36,32,0.08)"},
+  heroVisual:{width:360,minHeight:300,borderRadius:26,overflow:"hidden",position:"relative",backgroundColor:colors.softBlue},heroImage:{width:"100%",height:"100%",position:"absolute"},heroShade:{position:"absolute",top:0,right:0,bottom:0,left:0,backgroundColor:"rgba(4,36,32,0.08)"},
   floatingCard:{position:"absolute",bottom:18,left:15,right:15,backgroundColor:"rgba(255,255,255,.96)",borderRadius:15,padding:12,flexDirection:"row",gap:10,alignItems:"center",borderWidth:1,borderColor:colors.border},floatTitle:{fontWeight:"800",color:colors.ink},floatCopy:{fontSize:12,color:colors.muted},
   stats:{flexDirection:"row",flexWrap:"wrap",gap:12},stat:{flex:1,minWidth:220,backgroundColor:"#fff",borderWidth:1,borderColor:colors.border,borderRadius:18,padding:18},statValue:{fontSize:17,fontWeight:"800",color:colors.ink,marginTop:8},statLabel:{color:colors.muted,marginTop:2},
   sectionHeader:{flexDirection:"row",justifyContent:"space-between",alignItems:"flex-end",marginTop:10},sectionKicker:{fontSize:11,fontWeight:"900",letterSpacing:1.5,color:colors.primary},section:{fontSize:26,fontWeight:"900",color:colors.ink,marginTop:3},link:{fontWeight:"800",color:colors.primary},
