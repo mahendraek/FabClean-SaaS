@@ -1,6 +1,6 @@
 # Brand/Store switcher and active context
 
-Status: IMPLEMENTED — validated locally; awaiting review and explicit merge approval.
+Status: MERGED — validated and merged into `main` at `cd99661` with explicit user approval. Both Render services are live on that commit; public health/authentication and published switcher bundle checks passed. See [deployment status](../DEPLOYMENT_STATUS.md).
 Priority: P0 — selected after PR #4 by the user.
 
 ## Scope
@@ -35,4 +35,4 @@ Implementation commit: `ae6d1bb`, developed on `codex/pr-3-brand-store-switcher`
 
 Run frontend unit tests with `npm run test:context`. After web export, run `npm run test:context:browser`; install Playwright Chromium first (`npx playwright install chromium`) or set `CHROMIUM_EXECUTABLE` to an existing Chromium binary. The browser suite serves local exported files and intercepts API traffic; it does not test production.
 
-Native device/emulator and production authenticated smoke tests remain unperformed. Relogin preference is device-local; an already-active session uses its server-persisted context. Merge and deployment require explicit user approval.
+Native device/emulator and production authenticated smoke tests remain unperformed. Relogin preference is device-local; an already-active session uses its server-persisted context. The user explicitly authorized this merge and Render deployment.
