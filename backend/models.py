@@ -27,6 +27,7 @@ class Modifier(BaseModel):
 class Service(BaseModel):
     id: str
     business_id: str = "fabclean"
+    location_id: str = "main"
     category: str
     name: str
     description: str = ""
