@@ -15,9 +15,9 @@ The implementation adds forced PostgreSQL row-level security on 21 operational t
 
 **PR #5 — store hierarchy and operational handoffs:** merged into main at `9753435` with explicit user approval; implementation `324e911` on `codex/pr-5-store-hierarchy`, based on merged main `47e67a9`. Hierarchy/cycle/deactivation guards, scoped staff assignments, an immutable participant-scoped custody journal and a web/mobile handoff screen are implemented. Validation: 38 backend tests, 12 frontend unit tests, real local API browser flows and 27-route web export. Both Render services are live at `9753435`; API health/authentication and published handoff page/bundle checks passed. See [design and validation](roadmap/store-hierarchy.md).
 
-**Current maintenance:** [Pre-PR #6 audit and fixes](PRE_PR6_AUDIT.md) on `codex/pre-pr6-fixes`, based on main `8e783a7`. Session revocation, stale-store write protection, consistent assembly guards and all 34 TypeScript diagnostics are fixed. Validation: 42 backend tests, 15 frontend unit tests, zero TypeScript diagnostics, 27-route export and desktop/mobile browser checks. Awaiting review; not merged or deployed.
+**Current maintenance:** [Pre-PR #6 audit and fixes](PRE_PR6_AUDIT.md) on `codex/pre-pr6-fixes`, based on main `8e783a7`. Session revocation, stale-store write protection, consistent assembly guards and all 34 TypeScript diagnostics are fixed. Validation: 42 backend tests, 15 frontend unit tests, zero TypeScript diagnostics, 27-route export and desktop/mobile browser checks. Accepted and merged into main at `50eeb3d` with explicit user authorization; see [deployment status](DEPLOYMENT_STATUS.md).
 
-**Next (paused until maintenance acceptance):** PR #6 — security, testing and performance. Rebase each future implementation on the accepted predecessor so security behavior and tests remain intact.
+**Next:** PR #6 — security, testing and performance. Rebase each future implementation on the accepted predecessor so security behavior and tests remain intact.
 
 ## Sequential PR queue
 
@@ -60,7 +60,7 @@ These items remain required by [the functional specification](FUNCTIONAL_SPEC_V1
 | Phase 2 — messaging | SMS/WhatsApp/push delivery, consent and preferences; coordinate email/SMS receipts with #11. |
 | Phase 2 — operations | Staff clock-in/out, QuickBooks/Xero and stronger multi-location operations. |
 | Phase 3+ | Washer/dryer integrations and telemetry, payroll, smart lockers, advanced plant management, automated assembly, complex multi-store management, advanced marketing automation, AI receptionist and RFID. |
-| Engineering follow-ups | Frontend TypeScript baseline fixed in pre-PR #6 maintenance (awaiting acceptance); native iOS/Android validation; migration tooling and CI deployment checks; session/load/concurrency testing under #6. |
+| Engineering follow-ups | Frontend TypeScript baseline fixed in pre-PR #6 maintenance (accepted and merged); native iOS/Android validation; migration tooling and CI deployment checks; session/load/concurrency testing under #6. |
 
 ## How to maintain the queue
 

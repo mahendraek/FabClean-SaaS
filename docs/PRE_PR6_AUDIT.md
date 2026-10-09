@@ -1,6 +1,6 @@
 # Pre-PR #6 audit and fixes
 
-9 October 2026. Branch: `codex/pre-pr6-fixes`, based on main `8e783a7`. This is a focused maintenance review after PR #5, before developing PR #6. Awaiting review; not merged or deployed.
+9 October 2026. Branch: `codex/pre-pr6-fixes`, based on main `8e783a7`. This is a focused maintenance review after PR #5, before developing PR #6. Accepted with explicit user approval and merged into main at `50eeb3d1b2accd278ffff19484d2f430bcff8346`. Deployment verification is recorded in [deployment status](DEPLOYMENT_STATUS.md).
 
 ## Confirmed issues fixed
 
@@ -15,10 +15,10 @@
 - 15 frontend unit tests pass, including server revocation, retry on failure and context header/session reset behavior.
 - `tsc --noEmit` passes with zero diagnostics; Expo web export passes all 27 routes.
 - Desktop and mobile-web Chromium context checks pass, including assertions for scoped requests and the sign-out API call. Real local PostgreSQL-backed browser custody flows pass dispatch, receipt, return, completion and refresh.
-- No production fixtures, merge or deployment were performed. Native iOS/Android devices were not exercised. This focused audit does not replace the broader security/load/performance work planned for PR #6.
+- Validation used no production fixtures or operational data writes. Native iOS/Android devices were not exercised. This focused audit does not replace the broader security/load/performance work planned for PR #6.
 
 ## Review
 
 Compare: https://github.com/mahendraek/FabClean-SaaS/compare/main...codex/pre-pr6-fixes
 
-PR #6 remains paused until these maintenance fixes are reviewed and accepted. Future roadmap scopes and sequencing remain in [the tracker](DEVELOPMENT_TRACKER.md).
+The maintenance fixes are accepted and merged. PR #6 is next; its development has not started. Future roadmap scopes and sequencing remain in [the tracker](DEVELOPMENT_TRACKER.md).
