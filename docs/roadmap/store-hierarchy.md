@@ -1,6 +1,6 @@
 # Store hierarchy and multi-store operations
 
-Status: IMPLEMENTED — awaiting review; not merged or deployed.
+Status: MERGED — accepted and merged at `9753435` with explicit user approval. Both Render services are live on that commit; health, authentication and published handoff page/bundle checks passed. See [deployment status](../DEPLOYMENT_STATUS.md).
 Priority: P1 — selected after PR #3.
 PR: https://github.com/mahendraek/FabClean-SaaS/pull/5
 Implementation branch: `codex/pr-5-store-hierarchy`, based on accepted main `47e67a9`.
@@ -52,7 +52,7 @@ Open **Orders → Store handoffs**. Select a local open order with items, choose
 - 12 frontend unit tests pass: prior session/selection tests plus descendant filtering, hierarchy breadcrumbs and historical-cycle termination.
 - Desktop and mobile-web Chromium checks run against a real local PostgreSQL-backed API: confirmation back/cancel, dispatch, destination receipt, return, origin closure and persistence after refresh. Prior PR #3 switcher browser regression checks also pass.
 - Expo web export passes 27 routes, including the handoff screen. TypeScript has the same 34 baseline diagnostics, with no new errors after regenerating Expo route declarations.
-- Native devices/emulators, production migrations and production authenticated flows have not been exercised. No production data was written. Physical bag/barcode operations require an operator acceptance check before deployment.
+- Native devices/emulators and authenticated production custody flows have not been exercised. Deployment started successfully with the incremental migration; production schema contents were not independently queried. No production test fixtures or custody data writes were performed. Physical bag/barcode operations require an operator acceptance check before deployment.
 
 Backend: run `python -m unittest discover -s tests -v` from `backend`, with `FABCLEAN_TEST_DATABASE_URL` pointing explicitly to a disposable database owned by a NOSUPERUSER NOBYPASSRLS role. Never use production fixtures.
 
@@ -62,4 +62,4 @@ For the real-API browser suite, prepare fixtures from `backend` with `python -m 
 
 ## Boundaries
 
-Only `mahendraek/FabClean-SaaS` is changed. PR #4 isolation and PR #3 context switching remain intact. The original planning branch is retained in ancestry for a normal PR #5 update. Merge/deployment require explicit user approval. PR #6 is next after acceptance; no other roadmap feature is implemented here.
+Only `mahendraek/FabClean-SaaS` is changed. PR #4 isolation and PR #3 context switching remain intact. The original planning branch is retained in ancestry for a normal PR #5 update. The user explicitly authorized this merge and deployment. PR #6 is next after acceptance; no other roadmap feature is implemented here.
