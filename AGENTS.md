@@ -1,0 +1,9 @@
+# FabClean-SaaS development
+
+- Read `docs/DEVELOPMENT_TRACKER.md` and the current item's `docs/roadmap/` scope before development. The user wants one roadmap PR developed at a time. Keep the tracker current with concrete validation and verified PR/merge state.
+- Work only in this repository. Use the existing isolated cloud checkout; do not create a worktree unless requested. Preserve pre-existing user changes.
+- PR #4 implements store isolation. Preserve negative authorization tests and PostgreSQL RLS when adding features. New operational tables need ownership, isolation policies and related-ID checks; do not introduce global tenant data.
+- Run backend checks from `backend`: `python -m unittest discover -s tests -v`. Use `/workspace/.fabclean-venv/bin/python` in this prepared cloud environment. Set `FABCLEAN_TEST_DATABASE_URL` securely to a disposable database with a NOSUPERUSER NOBYPASSRLS owner role to execute PostgreSQL tests; report skips honestly. Never run integration fixtures on production.
+- For frontend changes, use the scripts in `frontend/package.json` and validate the Expo web export. In this cloud environment, set `XDG_CACHE_HOME=/workspace/.cache`, `__UNSAFE_EXPO_HOME_DIRECTORY=/workspace/.expo-home`, `EXPO_NO_TELEMETRY=1` and `EXPO_NO_TYPESCRIPT_SETUP=1` to keep generated setup files out of tracked source. Existing TypeScript errors are tracked separately; do not suppress checks to claim success.
+- Keep secrets out of code, logs and saved instructions. Schema upgrades require a non-bypass database role, preserve unknown historical rows as quarantined, and must be repeatable.
+- Do not merge or deploy without explicit user approval. An implemented PR awaiting review is distinct from merged code. Git PR refs do not establish open/closed state; verify through the API when available.

@@ -1,5 +1,7 @@
 # FabClean V1 Implementation Status
 
+This file records the initial foundation and is not a current completion audit. Use [DEVELOPMENT_TRACKER.md](DEVELOPMENT_TRACKER.md) for the active PR queue and validation evidence. The current persistent backend is PostgreSQL, not MongoDB.
+
 ## Implemented foundation
 - Separate FabClean repository
 - Expo/React Native shared web + mobile frontend

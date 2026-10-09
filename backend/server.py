@@ -11,8 +11,10 @@ from contextlib import contextmanager
 
 import psycopg
 from psycopg.rows import dict_row
+from psycopg.errors import UniqueViolation, ForeignKeyViolation, InsufficientPrivilege, CheckViolation
 from fastapi import FastAPI, HTTPException, Header, Request
 from fastapi.responses import Response
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 from twilio.rest import Client as TwilioClient
@@ -21,6 +23,7 @@ from sendgrid.helpers.mail import Mail
 
 from models import Service, Order, OrderCreate, Customer, CustomerCreate
 from seed import SERVICES
+from tenant_scope import current_scope, ScopedMemoryDict, configure_connection, migration_installed, install_isolation
 
 app = FastAPI(title="FabClean API", version="1.2.0")
 app.add_middleware(
@@ -40,12 +43,53 @@ SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY", "").strip()
 SENDGRID_FROM_EMAIL = os.getenv("SENDGRID_FROM_EMAIL", "").strip()
 SENDGRID_FROM_NAME = os.getenv("SENDGRID_FROM_NAME", "FabClean").strip()
 
-memory_services = {item["id"]: Service(**item) for item in SERVICES}
+memory_services = ScopedMemoryDict({item["id"]: Service(**item) for item in SERVICES})
 memory_orders = {}
 memory_customers = {}
 memory_payments = []
 memory_garments = {}
-memory_settings = {
+memory_catalogs = {name: ScopedMemoryDict() for name in (
+    "service_areas", "delivery_slots", "delivery_blackouts", "offers", "subscription_plans",
+    "customer_subscriptions", "customer_notifications", "service_categories",
+)}
+for index, name in enumerate(sorted({s.category for s in memory_services.values()}), 1):
+    key = name.lower().replace("&", "and").replace(" ", "-")
+    memory_catalogs["service_categories"][key] = {"id": key, "name": name, "active": True, "sort_order": index}
+
+def save_memory_record(table: str, data: dict, updating=False):
+    rows = memory_catalogs[table]
+    key = data["id"]
+    if updating and key not in rows:
+        raise HTTPException(404, "Record not found in the active store")
+    if not updating and key in rows:
+        raise HTTPException(409, "Identifier already exists")
+    brand, store = current_scope.get() or ("fabclean", "main")
+    record = {**(rows.get(key) or {}), **data, "id": key, "business_id": brand, "location_id": store}
+    rows[key] = record
+    return dict(record)
+
+def validate_item_barcode(order, barcode):
+    items = order.get("items", []) if isinstance(order, dict) else [i.model_dump() for i in order.items]
+    if not any(i.get("barcode_value") == barcode for i in items):
+        raise HTTPException(404, "Item barcode not found in this order")
+
+def validate_order_references(payload: dict, x_session_token):
+    if "items" in payload:
+        services = {s["id"] for s in get_service_values()}
+        if any(i.get("service_id") not in services for i in payload.get("items") or []):
+            raise HTTPException(404, "Service not found in the active store")
+    references = {"service_area_id": "service_areas", "scheduled_slot_id": "delivery_slots", "pickup_slot_id": "delivery_slots", "delivery_slot_id": "delivery_slots"}
+    for field, table in references.items():
+        key = payload.get(field)
+        if not key: continue
+        if not DATABASE_URL:
+            exists = key in memory_catalogs[table]
+        else:
+            from psycopg import sql
+            with db() as conn:
+                exists = conn.execute(sql.SQL("SELECT 1 FROM {} WHERE id=%s AND active=TRUE").format(sql.Identifier(table)), (key,)).fetchone()
+        if not exists: raise HTTPException(404, "Scheduling record not found in the active store")
+DEFAULT_SETTINGS = {
     "business_name": "FabClean Demo Laundry",
     "pickup_enabled": False,
     "delivery_enabled": False,
@@ -60,14 +104,51 @@ memory_settings = {
     "service_radius_miles": 10,
     "pickup_delivery_slot_minutes": 180,
 }
+memory_settings = ScopedMemoryDict(DEFAULT_SETTINGS, defaults=DEFAULT_SETTINGS)
+
+@app.exception_handler(UniqueViolation)
+async def duplicate_record(request, exc):
+    return JSONResponse(status_code=409, content={"detail": "Identifier already exists"})
+
+@app.exception_handler(ForeignKeyViolation)
+async def unavailable_reference(request, exc):
+    return JSONResponse(status_code=404, content={"detail": "Related record not found in the active store"})
+
+@app.exception_handler(InsufficientPrivilege)
+@app.exception_handler(CheckViolation)
+async def invalid_ownership(request, exc):
+    return JSONResponse(status_code=403, content={"detail": "Record ownership is not permitted"})
+
+@app.middleware("http")
+async def isolate_request(request: Request, call_next):
+    """All operational routes require a validated session and active store.
+
+    Context discovery, authentication and explicit platform/brand management
+    resolve their own authorized scope. Context never survives a request.
+    """
+    token = current_scope.set(None)
+    try:
+        path = request.url.path
+        exempt = path in ("/", "/api/health", "/api/context") or path.startswith(("/api/auth/", "/api/platform/", "/api/brand/stores"))
+        if path.startswith("/api/") and not exempt and request.method != "OPTIONS":
+            staff = get_current_staff(request.headers.get("x-session-token"))
+            if not staff:
+                return JSONResponse(status_code=401, content={"detail": "Staff sign-in required"})
+            current_scope.set(operational_scope(staff))
+        return await call_next(request)
+    except HTTPException as exc:
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    finally:
+        current_scope.reset(token)
 
 @contextmanager
-def db():
+def db(maintenance: bool = False):
     if not DATABASE_URL:
         yield None
         return
     conn = psycopg.connect(DATABASE_URL, autocommit=True, row_factory=dict_row)
     try:
+        configure_connection(conn, maintenance=maintenance)
         yield conn
     finally:
         conn.close()
@@ -75,7 +156,10 @@ def db():
 def init_db():
     if not DATABASE_URL:
         return
-    with db() as conn:
+    with db(maintenance=True) as conn, conn.transaction():
+        conn.execute("SELECT pg_advisory_xact_lock(471004)")
+        if migration_installed(conn):
+            return
         conn.execute("""
             CREATE TABLE IF NOT EXISTS app_settings (
                 id TEXT PRIMARY KEY,
@@ -464,7 +548,7 @@ def init_db():
         """)
         conn.execute(
             "INSERT INTO app_settings (id, payload) VALUES ('business', %s::jsonb) ON CONFLICT (id) DO NOTHING",
-            (json.dumps(memory_settings),),
+            (json.dumps(dict(memory_settings)),),
         )
         default_brand_id="fabclean"
         default_store_id="main"
@@ -490,9 +574,9 @@ def init_db():
         for order_row in existing_orders_for_tenant:
             order_payload=dict(order_row["payload"])
             changed=False
-            if order_payload.get("business_id","demo")=="demo":
+            if order_payload.get("business_id")=="demo":
                 order_payload["business_id"]=default_brand_id; changed=True
-            if order_payload.get("location_id","main")=="main":
+            if order_payload.get("location_id")=="main":
                 order_payload["location_id"]=default_store_id; changed=True
             customer_payload=dict(order_payload.get("customer") or {})
             if customer_payload and customer_payload.get("business_id","demo")=="demo":
@@ -511,12 +595,6 @@ def init_db():
                 "INSERT INTO user_role_assignments (id,user_id,role,scope_type,brand_id,store_id,active) VALUES (%s,%s,%s,%s,%s,%s,TRUE) ON CONFLICT DO NOTHING",
                 (assignment_id,staff_row["id"],scoped_role,scope_type,brand_id,store_id),
             )
-        first_owner=conn.execute("SELECT id FROM staff_users WHERE role='owner' ORDER BY created_at LIMIT 1").fetchone()
-        if first_owner:
-            conn.execute(
-                "INSERT INTO user_role_assignments (id,user_id,role,scope_type,brand_id,store_id,active) VALUES (%s,%s,'super_admin','platform',NULL,NULL,TRUE) ON CONFLICT DO NOTHING",
-                (f"platform-super-{first_owner['id']}",first_owner["id"]),
-            )
         conn.execute("""
             UPDATE app_settings
             SET payload=jsonb_set(payload,'{pickup_delivery_slot_minutes}','180'::jsonb,TRUE)
@@ -525,7 +603,7 @@ def init_db():
         for item in SERVICES:
             conn.execute(
                 "INSERT INTO services (id, payload, active) VALUES (%s, %s::jsonb, %s) ON CONFLICT (id) DO NOTHING",
-                (item["id"], json.dumps(item), item.get("active", True)),
+                (item["id"], json.dumps({**item, "business_id": default_brand_id, "location_id": default_store_id}), item.get("active", True)),
             )
         category_aliases={"Laundry":"Wash & Fold","Household":"Bedding"}
         legacy_services=conn.execute("SELECT id,payload FROM services").fetchall()
@@ -573,6 +651,10 @@ def init_db():
                 if slot["end_time"]!=expected_end:
                     conn.execute("UPDATE delivery_slots SET end_time=%s WHERE id=%s",(expected_end,slot["id"]))
             conn.execute("UPDATE app_settings SET payload=jsonb_set(payload,'{_slot_duration_3h_migrated}','true'::jsonb,TRUE) WHERE id='business'")
+        # Normalize only explicitly owned baseline catalog rows; unknown
+        # orders remain quarantined rather than inheriting default ownership.
+        conn.execute("UPDATE services SET payload=jsonb_set(payload,'{location_id}','\"main\"'::jsonb) WHERE payload->>'business_id'='fabclean' AND NOT payload ? 'location_id'")
+        install_isolation(conn)
 
 @app.on_event("startup")
 def startup():
@@ -580,10 +662,10 @@ def startup():
 
 def get_settings_value():
     if not DATABASE_URL:
-        return memory_settings
+        return dict(memory_settings)
     with db() as conn:
         row = conn.execute("SELECT payload FROM app_settings WHERE id='business'").fetchone()
-        return row["payload"] if row else memory_settings
+        return row["payload"] if row else dict(memory_settings)
 
 def capability_enabled(key: str, default: bool = True):
     return bool(get_settings_value().get(key, default))
@@ -620,7 +702,9 @@ def get_service_values(include_inactive: bool = False):
 
 def get_order_values():
     if not DATABASE_URL:
-        return [o.model_dump(mode="json") for o in memory_orders.values()]
+        values = [o.model_dump(mode="json") for o in memory_orders.values()]
+        scope = current_scope.get()
+        return [o for o in values if order_in_scope(o, *scope)] if scope else values
     with db() as conn:
         rows = conn.execute("SELECT payload FROM orders ORDER BY created_at DESC").fetchall()
         return [row["payload"] for row in rows]
@@ -689,13 +773,16 @@ def find_valid_offer(code: str, subtotal: float, customer_id: str | None):
     if not capability_enabled("offers_enabled", True):
         return None, 0
     code = (code or "").strip().upper()
-    if not code or not DATABASE_URL:
+    if not code:
         return None, 0
-    with db() as conn:
-        offer = conn.execute(
-            "SELECT * FROM offers WHERE UPPER(code)=UPPER(%s) AND active=TRUE AND (starts_at IS NULL OR starts_at<=NOW()) AND (ends_at IS NULL OR ends_at>=NOW())",
-            (code,),
-        ).fetchone()
+    if not DATABASE_URL:
+        offer = next((r for r in memory_catalogs["offers"].values() if str(r.get("code", "")).upper() == code and r.get("active", True)), None)
+    else:
+        with db() as conn:
+            offer = conn.execute(
+                "SELECT * FROM offers WHERE UPPER(code)=UPPER(%s) AND active=TRUE AND (starts_at IS NULL OR starts_at<=NOW()) AND (ends_at IS NULL OR ends_at>=NOW())",
+                (code,),
+            ).fetchone()
     if not offer:
         return None, 0
     order_count = 0
@@ -747,11 +834,13 @@ def record_login_audit(staff: dict, request: Request):
     loc=approximate_ip_location(ip)
     with db() as conn:
         conn.execute(
-            "INSERT INTO login_audit (id,staff_id,staff_name,staff_email,staff_role,ip_address,city,region,country,timezone,user_agent) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            "INSERT INTO login_audit (id,staff_id,staff_name,staff_email,staff_role,ip_address,city,region,country,timezone,user_agent,business_id,location_id) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 str(uuid.uuid4()), staff.get("id",""), staff.get("name",""), staff.get("email",""),
                 staff.get("role",""), ip, loc["city"], loc["region"], loc["country"], loc["timezone"],
                 request.headers.get("user-agent","")[:500],
+                staff.get("active_brand_id") or staff.get("business_id"),
+                staff.get("active_store_id") or staff.get("location_id"),
             ),
         )
 
@@ -771,23 +860,53 @@ def get_user_assignments(user_id: str):
 def get_current_staff(x_session_token: str | None):
     if not x_session_token: return None
     if not DATABASE_URL:
+        if x_session_token != "demo-token": return None
         return {"id":"demo-owner","name":"Demo Owner","role":"owner","active":True,"business_id":"fabclean","location_id":"main","assignments":get_user_assignments("demo-owner")}
     with db() as conn:
         row=conn.execute("SELECT s.*,ss.active_brand_id,ss.active_store_id FROM staff_sessions ss JOIN staff_users s ON s.id=ss.staff_id WHERE ss.token=%s AND ss.expires_at>NOW() AND s.active=TRUE",(x_session_token,)).fetchone()
     if not row: return None
     staff=dict(row)
     staff["assignments"]=get_user_assignments(staff["id"])
+    staff["assignments_loaded"] = True
     return staff
 
-def effective_permissions(staff: dict):
-    permissions=set(ROLE_PERMISSIONS.get(staff.get("role",""),set()))
+def active_assignments(staff: dict):
+    valid = []
+    roles = {"super_admin", "brand_admin", "store_manager", "counter", "processing", "driver"}
     for assignment in staff.get("assignments") or []:
-        permissions.update(ROLE_PERMISSIONS.get(assignment.get("role",""),set()))
+        role = assignment.get("role")
+        if role not in roles or not assignment.get("active", True): continue
+        scope = "platform" if role == "super_admin" else "brand" if role == "brand_admin" else "store"
+        brand, store = assignment.get("brand_id"), assignment.get("store_id")
+        if assignment.get("scope_type") != scope: continue
+        if scope == "platform" and (brand or store): continue
+        if scope == "brand" and (not brand or store): continue
+        if scope == "store" and (not brand or not store): continue
+        valid.append(assignment)
+    return valid
+
+def effective_permissions(staff: dict):
+    assignments = staff.get("assignments") or []
+    permissions = set() if assignments or staff.get("assignments_loaded") else set(ROLE_PERMISSIONS.get(staff.get("role", ""), set()))
+    brand = staff.get("active_brand_id") or staff.get("business_id")
+    store = staff.get("active_store_id") if staff.get("active_brand_id") else staff.get("location_id")
+    for assignment in active_assignments(staff):
+        if not assignment.get("active", True): continue
+        if assignment.get("role") == "super_admin" and assignment.get("scope_type") == "platform" and not assignment.get("brand_id") and not assignment.get("store_id"):
+            permissions.update(ROLE_PERMISSIONS["super_admin"])
+        elif assignment.get("brand_id") == brand and (
+            (assignment.get("scope_type") == "brand" and assignment.get("role") == "brand_admin" and not assignment.get("store_id")) or
+            (assignment.get("scope_type") == "store" and assignment.get("role") not in ("brand_admin", "super_admin") and assignment.get("store_id") == store)
+        ):
+            permissions.update(ROLE_PERMISSIONS.get(assignment.get("role", ""), set()))
     return permissions
 
 def has_role(staff: dict, role: str, brand_id: str | None = None, store_id: str | None = None):
-    for assignment in staff.get("assignments") or []:
+    for assignment in active_assignments(staff):
+        if not assignment.get("active", True): continue
         if assignment.get("role")!=role: continue
+        if role == "super_admin" and (assignment.get("scope_type") != "platform" or assignment.get("brand_id") or assignment.get("store_id")): continue
+        if role == "brand_admin" and (assignment.get("scope_type") != "brand" or not assignment.get("brand_id") or assignment.get("store_id")): continue
         if brand_id is not None and assignment.get("brand_id") not in (None,brand_id): continue
         if store_id is not None and assignment.get("store_id") not in (None,store_id): continue
         return True
@@ -807,25 +926,28 @@ def require_super_admin(x_session_token: str | None):
 
 def accessible_brand_ids(staff: dict):
     if has_role(staff,"super_admin"): return None
-    values={a.get("brand_id") for a in staff.get("assignments") or [] if a.get("brand_id")}
-    if staff.get("business_id"): values.add(staff["business_id"])
+    assignments = staff.get("assignments") or []
+    values={a.get("brand_id") for a in active_assignments(staff) if a.get("brand_id")}
+    if not assignments and not staff.get("assignments_loaded") and staff.get("business_id"): values.add(staff["business_id"])
     return values
 
 def accessible_store_ids(staff: dict, brand_id: str | None = None):
     if has_role(staff,"super_admin"): return None
-    assignments=staff.get("assignments") or []
+    assignments=active_assignments(staff)
     if any(a.get("role")=="brand_admin" and (brand_id is None or a.get("brand_id")==brand_id) for a in assignments):
         return None
     values={a.get("store_id") for a in assignments if a.get("store_id") and (brand_id is None or a.get("brand_id")==brand_id)}
-    if staff.get("location_id"): values.add(staff["location_id"])
+    if not staff.get("assignments") and not staff.get("assignments_loaded") and staff.get("location_id") and brand_id in (None, staff.get("business_id")):
+        values.add(staff["location_id"])
     return values
 
-def customer_metrics(customer_id: str, phone: str = ""):
+def customer_metrics(customer_id: str, phone: str = "", brand_id: str | None = None, store_id: str | None = None):
     values = get_order_values()
     matches = [
         o for o in values
-        if o.get("customer", {}).get("id") == customer_id
-        or (phone and o.get("customer", {}).get("phone") == phone)
+        if brand_id and store_id and order_in_scope(o, brand_id, store_id)
+        and (o.get("customer", {}).get("id") == customer_id
+             or (phone and o.get("customer", {}).get("phone") == phone))
     ]
     return {
         "order_count": len(matches),
@@ -847,27 +969,27 @@ def customer_row_to_dict(row):
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
-    data.update(customer_metrics(data["id"], data["phone"]))
+    data.update(customer_metrics(data["id"], data["phone"], data["business_id"], data["location_id"]))
     return data
 
-def find_customer_by_phone(phone: str):
+def find_customer_by_phone(phone: str, brand_id: str, store_id: str):
     phone = (phone or "").strip()
     if not phone:
         return None
     if not DATABASE_URL:
         for customer in memory_customers.values():
-            if customer.phone == phone:
+            if customer.phone == phone and customer.business_id == brand_id and customer.location_id == store_id:
                 return customer
         return None
     with db() as conn:
         row = conn.execute(
-            "SELECT * FROM customers WHERE phone=%s ORDER BY updated_at DESC LIMIT 1",
-            (phone,),
+            "SELECT * FROM customers WHERE phone=%s AND business_id=%s AND location_id=%s ORDER BY updated_at DESC LIMIT 1",
+            (phone,brand_id,store_id),
         ).fetchone()
     return customer_row_to_dict(row) if row else None
 
 def create_customer_record(payload: CustomerCreate):
-    existing = find_customer_by_phone(payload.phone)
+    existing = find_customer_by_phone(payload.phone,payload.business_id,payload.location_id)
     if existing:
         return existing
     customer_id = str(uuid.uuid4())
@@ -905,7 +1027,8 @@ def health():
     return {"status": "ok", "app": "FabClean", "database": database}
 
 @app.get("/api/settings")
-def get_settings():
+def get_settings(x_session_token: str | None = Header(default=None)):
+    require_permission("orders", x_session_token)
     return get_settings_value()
 
 @app.put("/api/settings")
@@ -916,25 +1039,25 @@ def update_settings(payload: dict, x_session_token: str | None = Header(default=
     if not DATABASE_URL:
         memory_settings.clear()
         memory_settings.update(current)
-        return memory_settings
+        return dict(memory_settings)
     with db() as conn:
         conn.execute(
             "INSERT INTO app_settings (id, payload) VALUES ('business', %s::jsonb) "
-            "ON CONFLICT (id) DO UPDATE SET payload=EXCLUDED.payload",
+            "ON CONFLICT (business_id,location_id,id) DO UPDATE SET payload=EXCLUDED.payload",
             (json.dumps(current),),
         )
     return current
 
 @app.get("/api/services")
-def list_services():
+def list_services(x_session_token: str | None = Header(default=None)):
+    require_permission("orders", x_session_token)
     values = get_service_values()
     active_categories = {row["name"] for row in get_category_values(include_inactive=False)}
     return {"services": [item for item in values if item.get("category") in active_categories]}
 
 def get_category_values(include_inactive: bool = True):
     if not DATABASE_URL:
-        names = sorted({s.category for s in memory_services.values()})
-        return [{"id": n.lower().replace("&", "and").replace(" ", "-"), "name": n, "active": True, "sort_order": i + 1} for i, n in enumerate(names)]
+        return [dict(r) for r in memory_catalogs["service_categories"].values() if include_inactive or r.get("active", True)]
     with db() as conn:
         if include_inactive:
             rows = conn.execute("SELECT id, name, active, sort_order FROM service_categories ORDER BY sort_order, name").fetchall()
@@ -949,7 +1072,7 @@ def admin_overview(x_session_token: str | None = Header(default=None)):
         services=[s.model_dump(mode="json") for s in memory_services.values()]
         categories=get_category_values(include_inactive=True)
         return {
-            "settings": memory_settings,
+            "settings": dict(memory_settings),
             "services": services,
             "categories": categories,
             "summary": {
@@ -974,7 +1097,7 @@ def admin_overview(x_session_token: str | None = Header(default=None)):
         services.append(payload)
     categories=[dict(row) for row in category_rows]
     return {
-        "settings": settings_row["payload"] if settings_row else memory_settings,
+        "settings": settings_row["payload"] if settings_row else dict(memory_settings),
         "services": services,
         "categories": categories,
         "summary": {
@@ -1000,7 +1123,9 @@ def create_category(payload: dict, x_session_token: str | None = Header(default=
     active = bool(payload.get("active", True))
     sort_order = int(payload.get("sort_order", 0) or 0)
     if not DATABASE_URL:
-        return {"id": category_id, "name": name, "active": active, "sort_order": sort_order}
+        if any(r["name"].lower() == name.lower() for r in get_category_values()):
+            raise HTTPException(409, "Category already exists")
+        return save_memory_record("service_categories", {"id": category_id, "name": name, "active": active, "sort_order": sort_order})
     with db() as conn:
         exists = conn.execute("SELECT 1 FROM service_categories WHERE id=%s OR LOWER(name)=LOWER(%s)", (category_id, name)).fetchone()
         if exists:
@@ -1012,7 +1137,7 @@ def create_category(payload: dict, x_session_token: str | None = Header(default=
 def update_category(category_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
     require_permission("admin",x_session_token)
     if not DATABASE_URL:
-        return {"id": category_id, "name": str(payload.get("name", category_id)), "active": bool(payload.get("active", True)), "sort_order": int(payload.get("sort_order", 0) or 0)}
+        return save_memory_record("service_categories", {**payload, "id": category_id}, updating=True)
     with db() as conn:
         current = conn.execute("SELECT * FROM service_categories WHERE id=%s", (category_id,)).fetchone()
         if not current:
@@ -1050,7 +1175,9 @@ def admin_list_services(x_session_token: str | None = Header(default=None)):
 
 @app.post("/api/services")
 def create_service(payload: Service, x_session_token: str | None = Header(default=None)):
-    require_permission("admin",x_session_token)
+    staff = require_permission("admin",x_session_token)
+    brand_id, store_id = operational_scope(staff)
+    payload = payload.model_copy(update={"business_id": brand_id, "location_id": store_id})
     data = payload.model_dump(mode="json")
     if not DATABASE_URL:
         if payload.id in memory_services:
@@ -1081,11 +1208,13 @@ def duplicate_service(service_id: str, payload: dict = {}, x_session_token: str 
     data["name"] = new_name
     data["active"] = False
     service = Service(**data)
-    return create_service(service)
+    return create_service(service, x_session_token)
 
 @app.put("/api/services/{service_id}")
 def update_service(service_id: str, payload: Service, x_session_token: str | None = Header(default=None)):
-    require_permission("admin",x_session_token)
+    staff = require_permission("admin",x_session_token)
+    brand_id, store_id = operational_scope(staff)
+    payload = payload.model_copy(update={"id": service_id, "business_id": brand_id, "location_id": store_id})
     if not DATABASE_URL:
         if service_id not in memory_services:
             raise HTTPException(404, "Service not found")
@@ -1146,7 +1275,7 @@ def scheduling_location_search(q: str = "", x_session_token: str | None = Header
 def scheduling_admin_summary(x_session_token: str | None = Header(default=None)):
     require_permission("admin",x_session_token)
     if not DATABASE_URL:
-        return {"areas":[],"slots":[],"blackouts":[],"settings":get_settings_value()}
+        return {"areas":list(memory_catalogs["service_areas"].values()),"slots":list(memory_catalogs["delivery_slots"].values()),"blackouts":list(memory_catalogs["delivery_blackouts"].values()),"settings":get_settings_value()}
     with db() as conn:
         area_rows=conn.execute("SELECT * FROM service_areas ORDER BY name").fetchall()
         slot_rows=conn.execute("SELECT * FROM delivery_slots ORDER BY day_of_week,start_time").fetchall()
@@ -1159,12 +1288,14 @@ def scheduling_admin_summary(x_session_token: str | None = Header(default=None))
         "areas":areas,
         "slots":[dict(r) for r in slot_rows],
         "blackouts":[dict(r) for r in blackout_rows],
-        "settings":settings_row["payload"] if settings_row else memory_settings,
+        "settings":settings_row["payload"] if settings_row else dict(memory_settings),
     }
 
 @app.get("/api/scheduling/areas")
-def list_service_areas(include_inactive: bool = False):
-    if not DATABASE_URL: return {"areas": []}
+def list_service_areas(include_inactive: bool = False, x_session_token: str | None = Header(default=None)):
+    staff=require_permission("orders",x_session_token)
+    operational_scope(staff)
+    if not DATABASE_URL: return {"areas": [dict(r) for r in memory_catalogs["service_areas"].values() if include_inactive or r.get("active", True)]}
     with db() as conn:
         rows = conn.execute("SELECT * FROM service_areas ORDER BY name").fetchall() if include_inactive else conn.execute("SELECT * FROM service_areas WHERE active=TRUE ORDER BY name").fetchall()
     return {"areas": [{**dict(r), "postal_codes": list(r.get("postal_codes") or [])} for r in rows]}
@@ -1176,7 +1307,7 @@ def create_service_area(payload: dict, x_session_token: str | None = Header(defa
     name = str(payload.get("name","")).strip()
     if not name: raise HTTPException(400, "Area name is required")
     data=(area_id,name,json.dumps(list(payload.get("postal_codes") or [])),bool(payload.get("active",True)),float(payload.get("delivery_fee",0) or 0),float(payload.get("minimum_order",0) or 0),float(payload.get("free_delivery_threshold",0) or 0))
-    if not DATABASE_URL: return {"id":area_id,**payload}
+    if not DATABASE_URL: return save_memory_record("service_areas", {**payload, "id": area_id})
     with db() as conn:
         row=conn.execute("INSERT INTO service_areas (id,name,postal_codes,active,delivery_fee,minimum_order,free_delivery_threshold) VALUES (%s,%s,%s::jsonb,%s,%s,%s,%s) RETURNING *",data).fetchone()
     d=dict(row); d["postal_codes"]=list(d.get("postal_codes") or []); return d
@@ -1184,7 +1315,7 @@ def create_service_area(payload: dict, x_session_token: str | None = Header(defa
 @app.put("/api/scheduling/areas/{area_id}")
 def update_service_area(area_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
     require_permission("admin",x_session_token)
-    if not DATABASE_URL: return {"id":area_id,**payload}
+    if not DATABASE_URL: return save_memory_record("service_areas", {**payload, "id": area_id}, updating=True)
     with db() as conn:
         current=conn.execute("SELECT * FROM service_areas WHERE id=%s",(area_id,)).fetchone()
         if not current: raise HTTPException(404,"Service area not found")
@@ -1193,8 +1324,10 @@ def update_service_area(area_id: str, payload: dict, x_session_token: str | None
     out=dict(row); out["postal_codes"]=list(out.get("postal_codes") or []); return out
 
 @app.get("/api/scheduling/slots")
-def list_delivery_slots(include_inactive: bool = False):
-    if not DATABASE_URL: return {"slots":[]}
+def list_delivery_slots(include_inactive: bool = False, x_session_token: str | None = Header(default=None)):
+    staff=require_permission("orders",x_session_token)
+    operational_scope(staff)
+    if not DATABASE_URL: return {"slots": [dict(r) for r in memory_catalogs["delivery_slots"].values() if include_inactive or r.get("active", True)]}
     with db() as conn:
         rows=conn.execute("SELECT * FROM delivery_slots ORDER BY day_of_week,start_time").fetchall() if include_inactive else conn.execute("SELECT * FROM delivery_slots WHERE active=TRUE ORDER BY day_of_week,start_time").fetchall()
     return {"slots":[dict(r) for r in rows]}
@@ -1204,7 +1337,7 @@ def create_delivery_slot(payload: dict, x_session_token: str | None = Header(def
     require_permission("admin",x_session_token)
     slot_id=str(payload.get("id") or uuid.uuid4())
     if not str(payload.get("name","")).strip(): raise HTTPException(400,"Slot name is required")
-    if not DATABASE_URL: return {"id":slot_id,**payload}
+    if not DATABASE_URL: return save_memory_record("delivery_slots", {**payload, "id": slot_id})
     with db() as conn:
         row=conn.execute("INSERT INTO delivery_slots (id,name,day_of_week,start_time,end_time,capacity,pickup_enabled,delivery_enabled,active) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *",(slot_id,str(payload["name"]).strip(),int(payload.get("day_of_week",0)),str(payload.get("start_time","09:00")),str(payload.get("end_time","11:00")),int(payload.get("capacity",10) or 10),bool(payload.get("pickup_enabled",True)),bool(payload.get("delivery_enabled",True)),bool(payload.get("active",True)))).fetchone()
     return dict(row)
@@ -1212,7 +1345,7 @@ def create_delivery_slot(payload: dict, x_session_token: str | None = Header(def
 @app.put("/api/scheduling/slots/{slot_id}")
 def update_delivery_slot(slot_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
     require_permission("admin",x_session_token)
-    if not DATABASE_URL: return {"id":slot_id,**payload}
+    if not DATABASE_URL: return save_memory_record("delivery_slots", {**payload, "id": slot_id}, updating=True)
     with db() as conn:
         current=conn.execute("SELECT * FROM delivery_slots WHERE id=%s",(slot_id,)).fetchone()
         if not current: raise HTTPException(404,"Slot not found")
@@ -1221,8 +1354,10 @@ def update_delivery_slot(slot_id: str, payload: dict, x_session_token: str | Non
     return dict(row)
 
 @app.get("/api/scheduling/blackouts")
-def list_blackouts():
-    if not DATABASE_URL: return {"blackouts":[]}
+def list_blackouts(x_session_token: str | None = Header(default=None)):
+    staff=require_permission("orders",x_session_token)
+    operational_scope(staff)
+    if not DATABASE_URL: return {"blackouts": list(memory_catalogs["delivery_blackouts"].values())}
     with db() as conn: rows=conn.execute("SELECT * FROM delivery_blackouts ORDER BY blackout_date").fetchall()
     return {"blackouts":[dict(r) for r in rows]}
 
@@ -1232,18 +1367,19 @@ def create_blackout(payload: dict, x_session_token: str | None = Header(default=
     bid=str(payload.get("id") or uuid.uuid4())
     date=str(payload.get("blackout_date","")).strip()
     if not date: raise HTTPException(400,"Blackout date is required")
-    if not DATABASE_URL: return {"id":bid,**payload}
+    if not DATABASE_URL: return save_memory_record("delivery_blackouts", {**payload, "id": bid})
     with db() as conn:
         row=conn.execute("INSERT INTO delivery_blackouts (id,blackout_date,reason,pickup_blocked,delivery_blocked) VALUES (%s,%s,%s,%s,%s) RETURNING *",(bid,date,str(payload.get("reason","")),bool(payload.get("pickup_blocked",True)),bool(payload.get("delivery_blocked",True)))).fetchone()
     return dict(row)
 
 @app.get("/api/scheduling/availability")
-def scheduling_availability(postal_code: str = "", mode: str = "pickup_and_delivery"):
-    if not DATABASE_URL: return {"areas":[],"slots":[],"blackouts":[]}
-    areas=list_service_areas()["areas"]
+def scheduling_availability(postal_code: str = "", mode: str = "pickup_and_delivery", x_session_token: str | None = Header(default=None)):
+    staff=require_permission("orders",x_session_token)
+    operational_scope(staff)
+    areas=list_service_areas(x_session_token=x_session_token)["areas"]
     if postal_code:
         areas=[a for a in areas if not a.get("postal_codes") or postal_code in a.get("postal_codes",[])]
-    slots=list_delivery_slots()["slots"]
+    slots=list_delivery_slots(x_session_token=x_session_token)["slots"]
     pickup_on=capability_enabled("pickup_enabled", False)
     delivery_on=capability_enabled("delivery_enabled", False)
     if mode=="pickup_only":
@@ -1252,22 +1388,23 @@ def scheduling_availability(postal_code: str = "", mode: str = "pickup_and_deliv
         slots=[s for s in slots if delivery_on and s.get("delivery_enabled")]
     elif mode=="pickup_and_delivery":
         slots=[s for s in slots if pickup_on and delivery_on and s.get("pickup_enabled") and s.get("delivery_enabled")]
-    return {"areas":areas,"slots":slots,"blackouts":list_blackouts()["blackouts"],"pickup_enabled":pickup_on,"delivery_enabled":delivery_on}
+    return {"areas":areas,"slots":slots,"blackouts":list_blackouts(x_session_token=x_session_token)["blackouts"],"pickup_enabled":pickup_on,"delivery_enabled":delivery_on}
 
 @app.get("/api/scheduling/orders")
 def scheduled_orders(date: str = "", q: str = "", x_session_token: str | None = Header(default=None)):
-    require_permission("orders",x_session_token)
+    staff=require_permission("orders",x_session_token)
+    brand_id,store_id=operational_scope(staff)
     query=(q or "").strip().lower()
     if not DATABASE_URL:
         values=[o.model_dump(mode="json") for o in memory_orders.values()]
-        values=[o for o in values if o.get("fulfillment_type") in ("pickup_only","delivery_only","pickup_and_delivery")]
+        values=[o for o in values if order_in_scope(o,brand_id,store_id) and o.get("fulfillment_type") in ("pickup_only","delivery_only","pickup_and_delivery")]
         if date:
             values=[o for o in values if o.get("pickup_date")==date or o.get("delivery_date")==date]
         if query:
             values=[o for o in values if query in str(o.get("order_number","")).lower() or query in str(o.get("customer",{}).get("name","")).lower() or query in str(o.get("customer",{}).get("phone","")).lower()]
         return {"orders":values[:250]}
-    clauses=["COALESCE(payload->>'fulfillment_type','walk_in') IN ('pickup_only','delivery_only','pickup_and_delivery')"]
-    params=[]
+    clauses=["COALESCE(payload->>'fulfillment_type','walk_in') IN ('pickup_only','delivery_only','pickup_and_delivery')", "payload->>'business_id'=%s", "payload->>'location_id'=%s"]
+    params=[brand_id,store_id]
     if date:
         clauses.append("(payload->>'pickup_date'=%s OR payload->>'delivery_date'=%s)")
         params.extend([date,date])
@@ -1282,8 +1419,8 @@ def scheduled_orders(date: str = "", q: str = "", x_session_token: str | None = 
 
 @app.get("/api/offers")
 def list_offers(include_inactive: bool = False, x_session_token: str | None = Header(default=None)):
-    if include_inactive: require_permission("admin",x_session_token)
-    if not DATABASE_URL: return {"offers": []}
+    require_permission("admin" if include_inactive else "orders",x_session_token)
+    if not DATABASE_URL: return {"offers": [dict(r) for r in memory_catalogs["offers"].values() if include_inactive or r.get("active", True)]}
     with db() as conn:
         if include_inactive:
             rows = conn.execute("SELECT * FROM offers ORDER BY created_at DESC").fetchall()
@@ -1300,7 +1437,7 @@ def create_offer(payload: dict, x_session_token: str | None = Header(default=Non
     code = str(payload.get("code", "")).strip().upper() or None
     dtype = str(payload.get("discount_type", "fixed"))
     if dtype not in ("fixed","percent"): raise HTTPException(400, "Invalid discount type")
-    if not DATABASE_URL: return {**payload, "id": offer_id, "code": code}
+    if not DATABASE_URL: return save_memory_record("offers", {**payload, "id": offer_id, "code": code})
     with db() as conn:
         row = conn.execute("""INSERT INTO offers (id,name,code,discount_type,discount_value,min_order,first_order_only,auto_apply,active,starts_at,ends_at,usage_limit)
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
@@ -1310,7 +1447,7 @@ def create_offer(payload: dict, x_session_token: str | None = Header(default=Non
 @app.put("/api/offers/{offer_id}")
 def update_offer(offer_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
     require_permission("admin",x_session_token)
-    if not DATABASE_URL: return {**payload, "id": offer_id}
+    if not DATABASE_URL: return save_memory_record("offers", {**payload, "id": offer_id}, updating=True)
     with db() as conn:
         current = conn.execute("SELECT * FROM offers WHERE id=%s", (offer_id,)).fetchone()
         if not current: raise HTTPException(404, "Offer not found")
@@ -1320,7 +1457,10 @@ def update_offer(offer_id: str, payload: dict, x_session_token: str | None = Hea
     return dict(row)
 
 @app.post("/api/offers/validate")
-def validate_offer(payload: dict):
+def validate_offer(payload: dict, x_session_token: str | None = Header(default=None)):
+    require_permission("orders", x_session_token)
+    if payload.get("customer_id"):
+        get_customer(payload["customer_id"], x_session_token)
     require_capability("offers_enabled", "Offers")
     code = str(payload.get("code", "")).strip().upper()
     subtotal = float(payload.get("subtotal", 0) or 0)
@@ -1332,10 +1472,11 @@ def validate_offer(payload: dict):
 
 @app.get("/api/customers")
 def list_customers(q: str = "", x_session_token: str | None = Header(default=None)):
-    require_permission("customers",x_session_token)
+    staff = require_permission("customers",x_session_token)
+    brand_id, store_id = operational_scope(staff)
     query = (q or "").strip().lower()
     if not DATABASE_URL:
-        values = [c.model_dump(mode="json") for c in memory_customers.values()]
+        values = [c.model_dump(mode="json") for c in memory_customers.values() if c.business_id == brand_id and c.location_id == store_id]
         if query:
             values = [
                 c for c in values
@@ -1350,31 +1491,33 @@ def list_customers(q: str = "", x_session_token: str | None = Header(default=Non
             rows = conn.execute(
                 """
                 SELECT * FROM customers
-                WHERE LOWER(name) LIKE %s OR LOWER(phone) LIKE %s OR LOWER(email) LIKE %s
+                WHERE business_id=%s AND (LOWER(name) LIKE %s OR LOWER(phone) LIKE %s OR LOWER(email) LIKE %s)
                 ORDER BY updated_at DESC LIMIT 50
                 """,
-                (like, like, like),
+                (brand_id, like, like, like),
             ).fetchall()
         else:
-            rows = conn.execute("SELECT * FROM customers ORDER BY updated_at DESC LIMIT 50").fetchall()
+            rows = conn.execute("SELECT * FROM customers WHERE business_id=%s ORDER BY updated_at DESC LIMIT 50",(brand_id,)).fetchall()
     return {"customers": [customer_row_to_dict(row) for row in rows]}
 
 @app.get("/api/customers/{customer_id}/payments")
 def customer_payment_history(customer_id: str, x_session_token: str | None = Header(default=None)):
-    require_permission("customers",x_session_token)
+    get_customer(customer_id,x_session_token)
+    brand_id,store_id=operational_scope(get_current_staff(x_session_token))
     if not DATABASE_URL:
-        rows=[p for p in memory_payments if p.get("customer_id")==customer_id]
+        permitted={o["id"] for o in get_order_values() if order_in_scope(o,brand_id,store_id)}
+        rows=[p for p in memory_payments if p.get("customer_id")==customer_id and p.get("order_id") in permitted]
     else:
         with db() as conn:
-            rows=[dict(r) for r in conn.execute("SELECT * FROM payment_transactions WHERE customer_id=%s ORDER BY created_at DESC",(customer_id,)).fetchall()]
+            rows=[dict(r) for r in conn.execute("SELECT p.* FROM payment_transactions p JOIN orders o ON o.id=p.order_id WHERE p.customer_id=%s AND o.payload->>'business_id'=%s AND o.payload->>'location_id'=%s ORDER BY p.created_at DESC",(customer_id,brand_id,store_id)).fetchall()]
     return {"payments":rows}
 
 @app.get("/api/customers/{customer_id}/profile")
 def get_customer_profile(customer_id: str, x_session_token: str | None = Header(default=None)):
-    require_permission("customers",x_session_token)
     customer = get_customer(customer_id, x_session_token)
+    brand_id, store_id = operational_scope(get_current_staff(x_session_token))
     values = get_order_values()
-    orders = [o for o in values if o.get("customer",{}).get("id") == customer_id]
+    orders = [o for o in values if o.get("customer",{}).get("id") == customer_id and order_in_scope(o,brand_id,store_id)]
     orders.sort(key=lambda o: o.get("created_at",""), reverse=True)
     rewards = customer_rewards(customer_id, x_session_token)
     referrals = customer_referrals(customer_id, x_session_token)
@@ -1399,31 +1542,42 @@ def get_customer_profile(customer_id: str, x_session_token: str | None = Header(
 
 @app.get("/api/customers/{customer_id}")
 def get_customer(customer_id: str, x_session_token: str | None = Header(default=None)):
-    require_permission("customers",x_session_token)
+    staff = require_permission("customers",x_session_token)
+    brand_id, store_id = operational_scope(staff)
     if not DATABASE_URL:
         customer = memory_customers.get(customer_id)
-        if not customer:
+        if not customer or customer.business_id != brand_id or customer.location_id != store_id:
             raise HTTPException(404, "Customer not found")
         return customer
     with db() as conn:
-        row = conn.execute("SELECT * FROM customers WHERE id=%s", (customer_id,)).fetchone()
+        row = conn.execute("SELECT * FROM customers WHERE id=%s AND business_id=%s", (customer_id,brand_id)).fetchone()
     if not row:
         raise HTTPException(404, "Customer not found")
     return customer_row_to_dict(row)
 
 @app.post("/api/customers")
 def create_customer(payload: CustomerCreate, x_session_token: str | None = Header(default=None)):
-    require_permission("customers",x_session_token)
-    return create_customer_record(payload)
+    staff = require_permission("customers",x_session_token)
+    brand_id, store_id = operational_scope(staff)
+    values = payload.model_dump()
+    values["business_id"] = brand_id
+    values["location_id"] = store_id
+    return create_customer_record(CustomerCreate(**values))
 
 @app.put("/api/customers/{customer_id}")
 def update_customer(customer_id: str, payload: CustomerCreate, x_session_token: str | None = Header(default=None)):
-    require_permission("customers",x_session_token)
+    previous = get_customer(customer_id,x_session_token)
+    staff = get_current_staff(x_session_token)
+    brand_id, store_id = operational_scope(staff)
+    values = payload.model_dump()
+    values["business_id"] = brand_id
+    values["location_id"] = previous["location_id"] if isinstance(previous,dict) else previous.location_id
+    payload = CustomerCreate(**values)
     if not DATABASE_URL:
         if customer_id not in memory_customers:
             raise HTTPException(404, "Customer not found")
         for cid, existing in memory_customers.items():
-            if cid != customer_id and existing.phone == payload.phone.strip():
+            if cid != customer_id and existing.business_id == brand_id and existing.location_id == store_id and existing.phone == payload.phone.strip():
                 raise HTTPException(409, "Another customer already uses this phone number")
         customer = Customer(id=customer_id, **payload.model_dump())
         memory_customers[customer_id] = customer
@@ -1436,11 +1590,11 @@ def update_customer(customer_id: str, payload: CustomerCreate, x_session_token: 
             """
             UPDATE customers
             SET business_id=%s, location_id=%s, name=%s, phone=%s, email=%s, notes=%s, updated_at=NOW()
-            WHERE id=%s RETURNING *
+            WHERE id=%s AND business_id=%s RETURNING *
             """,
             (
                 payload.business_id, payload.location_id, payload.name.strip(), payload.phone.strip(),
-                payload.email.strip(), payload.notes.strip(), customer_id
+                payload.email.strip(), payload.notes.strip(), customer_id,brand_id
             ),
         ).fetchone()
     if not row:
@@ -1450,6 +1604,7 @@ def update_customer(customer_id: str, payload: CustomerCreate, x_session_token: 
 @app.get("/api/customers/{customer_id}/rewards")
 def customer_rewards(customer_id: str, x_session_token: str | None = Header(default=None)):
     require_permission("customers",x_session_token)
+    get_customer(customer_id,x_session_token)
     if not capability_enabled("rewards_enabled", True): return {"enabled":False,"balance":0,"transactions":[]}
     if not DATABASE_URL: return {"enabled":True,"balance": reward_balance(customer_id), "transactions": []}
     with db() as conn:
@@ -1459,6 +1614,12 @@ def customer_rewards(customer_id: str, x_session_token: str | None = Header(defa
 @app.post("/api/customers/{customer_id}/rewards")
 def add_reward_transaction(customer_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
     require_permission("customers",x_session_token)
+    get_customer(customer_id,x_session_token)
+    if payload.get("order_id"):
+        order = get_order(payload["order_id"], x_session_token)
+        data = order.model_dump(mode="json") if hasattr(order, "model_dump") else order
+        if data.get("customer", {}).get("id") != customer_id:
+            raise HTTPException(400, "Customer does not belong to this order")
     require_capability("rewards_enabled", "Rewards")
     points = int(payload.get("points", 0) or 0)
     if points == 0: raise HTTPException(400, "Points cannot be zero")
@@ -1472,6 +1633,7 @@ def add_reward_transaction(customer_id: str, payload: dict, x_session_token: str
 @app.get("/api/customers/{customer_id}/referrals")
 def customer_referrals(customer_id: str, x_session_token: str | None = Header(default=None)):
     require_permission("customers",x_session_token)
+    get_customer(customer_id,x_session_token)
     if not capability_enabled("referrals_enabled", True): return {"enabled":False,"referral_code":"","referrals":[]}
     code = get_or_create_referral_code(customer_id)
     if not DATABASE_URL: return {"enabled":True,"referral_code": code, "referrals": []}
@@ -1486,6 +1648,7 @@ def claim_referral(payload: dict, x_session_token: str | None = Header(default=N
     code = str(payload.get("code", "")).strip().upper()
     referred_customer_id = str(payload.get("referred_customer_id", "")).strip()
     if not code or not referred_customer_id: raise HTTPException(400, "Referral code and customer are required")
+    get_customer(referred_customer_id, x_session_token)
     if not DATABASE_URL: return {"status": "claimed"}
     with db() as conn:
         row = conn.execute("SELECT * FROM referrals WHERE referral_code=%s", (code,)).fetchone()
@@ -1494,19 +1657,47 @@ def claim_referral(payload: dict, x_session_token: str | None = Header(default=N
         updated = conn.execute("UPDATE referrals SET referred_customer_id=%s,status='claimed' WHERE id=%s RETURNING *", (referred_customer_id,row["id"])).fetchone()
     return dict(updated)
 
+def operational_scope(staff: dict):
+    """Resolve permitted active tenant and store; fail closed on missing context."""
+    brand_id = staff.get("active_brand_id") or staff.get("business_id")
+    store_id = staff.get("active_store_id")
+    if not store_id and not staff.get("active_brand_id"):
+        store_id = staff.get("location_id")
+    if not brand_id or not store_id:
+        raise HTTPException(409, "Select an active brand and store")
+    brands = accessible_brand_ids(staff)
+    stores = accessible_store_ids(staff, brand_id)
+    if brands is not None and brand_id not in brands:
+        raise HTTPException(403, "Brand access denied")
+    if stores is not None and store_id not in stores:
+        raise HTTPException(403, "Store access denied")
+    if DATABASE_URL:
+        with db() as conn:
+            row = conn.execute("SELECT s.id FROM stores s JOIN brands b ON b.id=s.brand_id WHERE s.id=%s AND s.brand_id=%s AND s.active=TRUE AND b.status='active'", (store_id, brand_id)).fetchone()
+        if not row:
+            raise HTTPException(403, "Selected store is unavailable")
+    return brand_id, store_id
+
+
+def order_in_scope(order: dict, brand_id: str, store_id: str):
+    return order.get("business_id") == brand_id and order.get("location_id") == store_id
+
+
 @app.get("/api/orders")
 def list_orders(x_session_token: str | None = Header(default=None)):
     staff = require_permission("orders", x_session_token)
-    values = get_order_values()
-    if staff.get("role") == "owner":
-        return {"orders": values, "scope": "all"}
-    return {"orders": values, "scope": "operational"}
+    brand_id, store_id = operational_scope(staff)
+    values = [o for o in get_order_values() if order_in_scope(o, brand_id, store_id)]
+    return {"orders": values, "scope": "store"}
 
 @app.get("/api/orders/{identifier}")
 def get_order(identifier: str, x_session_token: str | None = Header(default=None)):
-    require_permission("orders",x_session_token)
+    staff = require_permission("orders",x_session_token)
+    brand_id, store_id = operational_scope(staff)
     if not DATABASE_URL:
         for order in memory_orders.values():
+            if not order_in_scope(order.model_dump(mode="json"),brand_id,store_id):
+                continue
             if identifier in (order.id, order.order_number, order.barcode_value):
                 return order
             if any(item.barcode_value == identifier for item in order.items):
@@ -1516,6 +1707,8 @@ def get_order(identifier: str, x_session_token: str | None = Header(default=None
         rows = conn.execute("SELECT payload FROM orders ORDER BY created_at DESC").fetchall()
         for row in rows:
             order = row["payload"]
+            if not order_in_scope(order,brand_id,store_id):
+                continue
             if identifier in (order.get("id"), order.get("order_number"), order.get("barcode_value")):
                 return order
             if any(item.get("barcode_value") == identifier for item in order.get("items", [])):
@@ -1525,10 +1718,12 @@ def get_order(identifier: str, x_session_token: str | None = Header(default=None
 @app.post("/api/orders")
 def create_order(payload: OrderCreate, x_session_token: str | None = Header(default=None)):
     staff=require_permission("orders",x_session_token)
+    brand_id, store_id = operational_scope(staff)
     if not payload.quick_dropoff and not payload.items:
         raise HTTPException(400, "At least one service is required unless this is a quick drop-off")
     if payload.quick_dropoff and payload.bag_count < 1:
         raise HTTPException(400, "Quick drop-off requires at least one bag")
+    validate_order_references(payload.model_dump(), x_session_token)
     order_id = str(uuid.uuid4())
     if DATABASE_URL:
         with db() as conn:
@@ -1549,13 +1744,18 @@ def create_order(payload: OrderCreate, x_session_token: str | None = Header(defa
             customer = customer_row_to_dict(row) if row else None
         if not customer:
             raise HTTPException(404, "Selected customer not found")
+        if ((customer.get("business_id") if isinstance(customer, dict) else customer.business_id) != brand_id or
+            (customer.get("location_id") if isinstance(customer, dict) else customer.location_id) != store_id):
+            raise HTTPException(404, "Selected customer not found")
     else:
-        customer = find_customer_by_phone(payload.customer_phone)
+        customer = find_customer_by_phone(payload.customer_phone,brand_id,store_id)
         if not customer:
             customer = create_customer_record(CustomerCreate(
                 name=payload.customer_name,
                 phone=payload.customer_phone,
                 email=payload.customer_email,
+                business_id=brand_id,
+                location_id=store_id,
             ))
     if isinstance(customer, dict):
         customer = Customer(**customer)
@@ -1643,12 +1843,19 @@ def create_order(payload: OrderCreate, x_session_token: str | None = Header(defa
         status="inspection" if payload.quick_dropoff else "received",
     )
 
+    order.business_id = brand_id
+    order.location_id = store_id
     if not DATABASE_URL:
         memory_orders[order_id] = order
+        if applied_offer:
+            applied_offer["usage_count"] = int(applied_offer.get("usage_count", 0)) + 1
+            memory_catalogs["offers"][applied_offer["id"]] = applied_offer
         ensure_order_garments(order_id)
         return order
 
     data = order.model_dump(mode="json")
+    data["business_id"] = brand_id
+    data["location_id"] = store_id
     with db() as conn:
         conn.execute(
             "INSERT INTO orders (id, order_number, barcode_value, payload) VALUES (%s, %s, %s, %s::jsonb)",
@@ -1696,13 +1903,15 @@ def order_receipt(order_id: str, x_session_token: str | None = Header(default=No
 
 @app.get("/api/financial/daily")
 def daily_financial_summary(date: str | None = None, x_session_token: str | None = Header(default=None)):
-    require_permission("admin",x_session_token)
+    staff=require_permission("admin",x_session_token)
+    brand_id,store_id=operational_scope(staff)
     target=date or datetime.now(timezone.utc).date().isoformat()
     if not DATABASE_URL:
-        rows=[p for p in memory_payments if str(p.get("created_at",""))[:10]==target]
+        permitted={o["id"] for o in get_order_values() if order_in_scope(o,brand_id,store_id)}
+        rows=[p for p in memory_payments if str(p.get("created_at",""))[:10]==target and p.get("order_id") in permitted]
     else:
         with db() as conn:
-            rows=[dict(r) for r in conn.execute("SELECT * FROM payment_transactions WHERE created_at::date=%s::date ORDER BY created_at",(target,)).fetchall()]
+            rows=[dict(r) for r in conn.execute("SELECT p.* FROM payment_transactions p JOIN orders o ON o.id=p.order_id WHERE p.created_at::date=%s::date AND o.payload->>'business_id'=%s AND o.payload->>'location_id'=%s ORDER BY p.created_at",(target,brand_id,store_id)).fetchall()]
     cash=round(sum(float(r.get("amount",0) or 0) for r in rows if r.get("payment_method")=="cash"),2)
     card=round(sum(float(r.get("amount",0) or 0) for r in rows if r.get("payment_method")=="card"),2)
     other=round(sum(float(r.get("amount",0) or 0) for r in rows if r.get("payment_method")=="other"),2)
@@ -1765,6 +1974,7 @@ def create_order_payment(order_id: str, payload: dict, x_session_token: str | No
 @app.put("/api/orders/{order_id}")
 def update_order(order_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
     staff=require_permission("orders",x_session_token)
+    get_order(order_id,x_session_token)
     allowed = {
         "items", "notes", "discount", "tax", "payment_method", "payment_status",
         "due_at", "pricing_status", "quick_dropoff", "bag_count", "status",
@@ -1773,6 +1983,7 @@ def update_order(order_id: str, payload: dict, x_session_token: str | None = Hea
         "service_address", "service_postal_code", "delivery_fee", "fulfillment_type"
     }
     updates = {k: v for k, v in payload.items() if k in allowed}
+    validate_order_references(updates, x_session_token)
     if not updates:
         raise HTTPException(400, "No supported order fields supplied")
 
@@ -1876,30 +2087,36 @@ def ensure_order_garments(order_id: str):
 @app.get("/api/orders/{order_id}/garments")
 def list_order_garments(order_id: str, x_session_token: str | None = Header(default=None)):
     require_permission("orders",x_session_token)
+    get_order(order_id,x_session_token)
     rows=ensure_order_garments(order_id)
     assembled=sum(1 for g in rows if g.get("assembled"))
     return {"garments":rows,"expected_count":len(rows),"assembled_count":assembled,"assembly_complete":bool(rows) and assembled==len(rows)}
 
 @app.get("/api/garments/{garment_code}")
 def find_garment(garment_code: str, x_session_token: str | None = Header(default=None)):
-    require_permission("orders",x_session_token)
+    staff=require_permission("orders",x_session_token)
+    brand_id, store_id = operational_scope(staff)
     code=garment_code.strip().upper()
     if not DATABASE_URL:
         for rows in memory_garments.values():
             for garment in rows:
                 if garment.get("garment_code","").upper()==code:
                     order=memory_orders.get(garment["order_id"])
-                    return {"garment":garment,"order":order.model_dump(mode="json") if order else None}
+                    if order and order_in_scope(order.model_dump(mode="json"),brand_id,store_id):
+                        return {"garment":garment,"order":order.model_dump(mode="json")}
         raise HTTPException(404,"Garment not found")
     with db() as conn:
         garment=conn.execute("SELECT * FROM order_garments WHERE UPPER(garment_code)=UPPER(%s)",(code,)).fetchone()
         if not garment: raise HTTPException(404,"Garment not found")
         order=conn.execute("SELECT payload FROM orders WHERE id=%s",(garment["order_id"],)).fetchone()
-    return {"garment":dict(garment),"order":dict(order["payload"]) if order else None}
+    if not order or not order_in_scope(order["payload"],brand_id,store_id):
+        raise HTTPException(404,"Garment not found")
+    return {"garment":dict(garment),"order":dict(order["payload"])}
 
 @app.post("/api/orders/{order_id}/garments/{garment_code}/scan")
 def scan_garment(order_id: str, garment_code: str, payload: dict, x_session_token: str | None = Header(default=None)):
     staff=require_permission("orders",x_session_token)
+    get_order(order_id,x_session_token)
     stage=str(payload.get("stage","assembly")).lower()
     if stage not in GARMENT_STAGES:
         raise HTTPException(400,"Invalid garment stage")
@@ -1921,6 +2138,7 @@ def scan_garment(order_id: str, garment_code: str, payload: dict, x_session_toke
 @app.post("/api/orders/{order_id}/garments/{garment_code}/reprint")
 def reprint_garment_tag(order_id: str, garment_code: str, x_session_token: str | None = Header(default=None)):
     staff=require_permission("orders",x_session_token)
+    get_order(order_id,x_session_token)
     ensure_order_garments(order_id)
     if not DATABASE_URL:
         rows=memory_garments.get(order_id,[])
@@ -1938,6 +2156,7 @@ def reprint_garment_tag(order_id: str, garment_code: str, x_session_token: str |
 @app.post("/api/orders/{order_id}/assembly/complete")
 def complete_garment_assembly(order_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
     staff=require_permission("orders",x_session_token)
+    get_order(order_id,x_session_token)
     rows=ensure_order_garments(order_id)
     missing=[g for g in rows if not g.get("assembled")]
     override=bool(payload.get("override",False))
@@ -1964,11 +2183,13 @@ def complete_garment_assembly(order_id: str, payload: dict, x_session_token: str
 @app.get("/api/orders/{order_id}/events")
 def list_order_events(order_id: str, x_session_token: str | None = Header(default=None)):
     require_permission("orders",x_session_token)
+    get_order(order_id,x_session_token)
     return {"events": get_order_events(order_id)}
 
 @app.get("/api/orders/{order_id}/inspection")
 def get_order_inspection(order_id: str, x_session_token: str | None = Header(default=None)):
     require_permission("processing",x_session_token)
+    get_order(order_id,x_session_token)
     if not DATABASE_URL:
         return {"items": [], "photos": []}
     with db() as conn:
@@ -1982,6 +2203,7 @@ def get_order_inspection(order_id: str, x_session_token: str | None = Header(def
 @app.put("/api/orders/{order_id}/inspection/{item_barcode}")
 def update_item_inspection(order_id: str, item_barcode: str, payload: dict, x_session_token: str | None = Header(default=None)):
     staff=require_permission("processing",x_session_token)
+    validate_item_barcode(get_order(order_id,x_session_token), item_barcode)
     tags = list(payload.get("tags") or [])
     notes = str(payload.get("condition_notes", ""))
     status = str(payload.get("condition_status", "inspected"))
@@ -2003,6 +2225,9 @@ def update_item_inspection(order_id: str, item_barcode: str, payload: dict, x_se
 @app.post("/api/orders/{order_id}/photos")
 def add_order_photo(order_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
     staff=require_permission("processing",x_session_token)
+    order = get_order(order_id,x_session_token)
+    if payload.get("item_barcode"):
+        validate_item_barcode(order, payload["item_barcode"])
     encoded = str(payload.get("data_base64", ""))
     if not encoded:
         raise HTTPException(400, "Photo data is required")
@@ -2032,6 +2257,7 @@ def add_order_photo(order_id: str, payload: dict, x_session_token: str | None = 
 @app.get("/api/orders/{order_id}/photos/{photo_id}")
 def get_order_photo(order_id: str, photo_id: str, x_session_token: str | None = Header(default=None)):
     require_permission("processing",x_session_token)
+    get_order(order_id,x_session_token)
     if not DATABASE_URL:
         raise HTTPException(404, "Photo not found")
     with db() as conn:
@@ -2043,6 +2269,7 @@ def get_order_photo(order_id: str, photo_id: str, x_session_token: str | None = 
 @app.delete("/api/orders/{order_id}/photos/{photo_id}")
 def delete_order_photo(order_id: str, photo_id: str, x_session_token: str | None = Header(default=None)):
     staff=require_permission("processing",x_session_token)
+    get_order(order_id,x_session_token)
     if not DATABASE_URL:
         return {"deleted": True}
     with db() as conn:
@@ -2055,6 +2282,7 @@ def delete_order_photo(order_id: str, photo_id: str, x_session_token: str | None
 @app.put("/api/orders/{order_id}/status")
 def update_order_status(order_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
     staff=require_permission("orders",x_session_token)
+    get_order(order_id,x_session_token)
     if not DATABASE_URL:
         order = memory_orders.get(order_id)
         if not order:
@@ -2119,6 +2347,7 @@ def get_context(x_session_token: str | None = Header(default=None)):
             stores=conn.execute("SELECT * FROM stores WHERE active=TRUE AND id=ANY(%s) ORDER BY brand_id,name",(list(store_ids),)).fetchall()
         else:
             stores=[]
+    stores = [s for s in stores if accessible_store_ids(staff, s["brand_id"]) is None or s["id"] in accessible_store_ids(staff, s["brand_id"])]
     # Only resolve stores belonging to the active brand; never silently cross tenants.
     requested_brand_id=staff.get("active_brand_id") or staff.get("business_id")
     active_brand=next((dict(x) for x in brands if x["id"]==requested_brand_id),dict(brands[0]) if brands else None)
@@ -2216,6 +2445,28 @@ def require_brand_admin_for(brand_id: str, x_session_token: str | None):
         return staff
     raise HTTPException(403,"Brand Admin access required")
 
+def require_staff_administrator(x_session_token):
+    staff = require_permission("admin", x_session_token)
+    brand = staff.get("active_brand_id") or staff.get("business_id")
+    return require_brand_admin_for(brand, x_session_token)
+
+def safe_staff_record(row):
+    return {k: v for k, v in dict(row).items() if k not in ("password_hash", "password_salt")}
+
+def sync_staff_role(conn, staff_id, role, brand_id, store_id):
+    mapped = {"owner": "brand_admin", "manager": "store_manager"}.get(role, role)
+    scope = "brand" if mapped == "brand_admin" else "store"
+    conn.execute("DELETE FROM user_role_assignments WHERE user_id=%s AND (id LIKE 'legacy-%%' OR id=%s)", (staff_id, "staff-default-" + staff_id))
+    conn.execute("INSERT INTO user_role_assignments (id,user_id,role,scope_type,brand_id,store_id) VALUES (%s,%s,%s,%s,%s,%s)",
+                 ("staff-default-" + staff_id, staff_id, mapped, scope, brand_id, None if scope == "brand" else store_id))
+
+def validate_staff_target(conn, actor, staff_id):
+    if has_role(actor, "super_admin"): return
+    brand = actor.get("active_brand_id") or actor.get("business_id")
+    roles = conn.execute("SELECT * FROM user_role_assignments WHERE user_id=%s", (staff_id,)).fetchall()
+    if any(r["scope_type"] == "platform" or r["brand_id"] != brand for r in roles):
+        raise HTTPException(403, "Staff with platform or other-brand roles requires SuperAdmin")
+
 @app.get("/api/brand/stores")
 def list_brand_stores(brand_id: str = "", include_inactive: bool = True, x_session_token: str | None = Header(default=None)):
     staff=get_current_staff(x_session_token)
@@ -2258,7 +2509,10 @@ def create_store(payload: dict, x_session_token: str | None = Header(default=Non
 def update_store(store_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
     staff=get_current_staff(x_session_token)
     if not staff: raise HTTPException(401,"Staff sign-in required")
-    if not DATABASE_URL: return {"id":store_id,**payload}
+    if not DATABASE_URL:
+        require_brand_admin_for("fabclean", x_session_token)
+        if store_id != "main": raise HTTPException(404, "Store not found")
+        return {**payload,"id":store_id,"brand_id":"fabclean"}
     with db() as conn:
         current=conn.execute("SELECT * FROM stores WHERE id=%s",(store_id,)).fetchone()
         if not current: raise HTTPException(404,"Store not found")
@@ -2278,27 +2532,29 @@ def update_store(store_id: str, payload: dict, x_session_token: str | None = Hea
 
 @app.get("/api/admin/staff/{staff_id}/roles")
 def list_staff_roles(staff_id: str, x_session_token: str | None = Header(default=None)):
-    actor=require_permission("admin",x_session_token)
+    actor=require_staff_administrator(x_session_token)
     if not DATABASE_URL: return {"assignments":[]}
     with db() as conn:
         target=conn.execute("SELECT * FROM staff_users WHERE id=%s",(staff_id,)).fetchone()
         if not target: raise HTTPException(404,"Staff user not found")
-        if not has_role(actor,"super_admin") and target["business_id"]!=actor.get("business_id"):
+        validate_staff_target(conn, actor, staff_id)
+        if not has_role(actor,"super_admin") and target["business_id"]!=(actor.get("active_brand_id") or actor.get("business_id")):
             raise HTTPException(403,"Cannot manage staff outside your brand")
         rows=conn.execute("SELECT * FROM user_role_assignments WHERE user_id=%s ORDER BY scope_type,role",(staff_id,)).fetchall()
     return {"assignments":[dict(r) for r in rows]}
 
 @app.put("/api/admin/staff/{staff_id}/roles")
 def replace_staff_roles(staff_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
-    actor=require_permission("admin",x_session_token)
+    actor=require_staff_administrator(x_session_token)
     assignments=list(payload.get("assignments") or [])
     allowed_roles={"super_admin","brand_admin","store_manager","counter","processing","driver"}
     if not DATABASE_URL: return {"assignments":assignments}
-    with db() as conn:
+    with db() as conn, conn.transaction():
         target=conn.execute("SELECT * FROM staff_users WHERE id=%s",(staff_id,)).fetchone()
         if not target: raise HTTPException(404,"Staff user not found")
         target_brand=target.get("business_id")
-        if not has_role(actor,"super_admin") and target_brand!=actor.get("business_id"):
+        validate_staff_target(conn, actor, staff_id)
+        if not has_role(actor,"super_admin") and target_brand!=(actor.get("active_brand_id") or actor.get("business_id")):
             raise HTTPException(403,"Cannot manage staff outside your brand")
         for a in assignments:
             role=str(a.get("role",""))
@@ -2306,9 +2562,14 @@ def replace_staff_roles(staff_id: str, payload: dict, x_session_token: str | Non
             brand_id=a.get("brand_id") or None
             store_id=a.get("store_id") or None
             if role not in allowed_roles or scope not in ("platform","brand","store"): raise HTTPException(400,"Invalid role assignment")
+            expected_scope = "platform" if role == "super_admin" else "brand" if role == "brand_admin" else "store"
+            if scope != expected_scope or (scope == "platform" and (brand_id or store_id)) or (scope == "brand" and (not brand_id or store_id)) or (scope == "store" and (not brand_id or not store_id)):
+                raise HTTPException(400, "Role and scope do not match")
+            if brand_id and not conn.execute("SELECT 1 FROM brands WHERE id=%s AND status='active'", (brand_id,)).fetchone():
+                raise HTTPException(404, "Brand not found")
             if role=="super_admin" and not has_role(actor,"super_admin"): raise HTTPException(403,"Only SuperAdmin can assign SuperAdmin")
             if scope=="platform" and role!="super_admin": raise HTTPException(400,"Only SuperAdmin can use platform scope")
-            if not has_role(actor,"super_admin") and brand_id!=actor.get("business_id"): raise HTTPException(403,"Cannot assign another brand")
+            if not has_role(actor,"super_admin") and brand_id!=(actor.get("active_brand_id") or actor.get("business_id")): raise HTTPException(403,"Cannot assign another brand")
             if store_id:
                 store=conn.execute("SELECT brand_id FROM stores WHERE id=%s",(store_id,)).fetchone()
                 if not store or store["brand_id"]!=brand_id: raise HTTPException(400,"Store must belong to assigned brand")
@@ -2326,15 +2587,16 @@ def replace_staff_roles(staff_id: str, payload: dict, x_session_token: str | Non
 
 @app.get("/api/admin/staff")
 def list_staff(include_inactive: bool = True, x_session_token: str | None = Header(default=None)):
-    require_permission("admin",x_session_token)
+    actor = require_permission("admin",x_session_token)
+    brand_id, store_id = operational_scope(actor)
     if not DATABASE_URL: return {"staff":[]}
     with db() as conn:
-        rows = conn.execute("SELECT * FROM staff_users ORDER BY name").fetchall() if include_inactive else conn.execute("SELECT * FROM staff_users WHERE active=TRUE ORDER BY name").fetchall()
-    return {"staff":[dict(r) for r in rows]}
+        rows = conn.execute("SELECT * FROM staff_users WHERE business_id=%s AND location_id=%s AND (%s OR active=TRUE) ORDER BY name", (brand_id, store_id, include_inactive)).fetchall()
+    return {"staff":[safe_staff_record(r) for r in rows]}
 
 @app.post("/api/admin/staff")
 def create_staff(payload: dict, x_session_token: str | None = Header(default=None)):
-    actor=require_permission("admin",x_session_token)
+    actor=require_staff_administrator(x_session_token)
     name=str(payload.get("name","")).strip(); email=str(payload.get("email","")).strip().lower(); role=str(payload.get("role","counter")).strip().lower(); password=str(payload.get("password",""))
     business_id=str(payload.get("business_id") or actor.get("active_brand_id") or actor.get("business_id") or "fabclean")
     location_id=str(payload.get("location_id") or actor.get("active_store_id") or actor.get("location_id") or "main")
@@ -2347,31 +2609,40 @@ def create_staff(payload: dict, x_session_token: str | None = Header(default=Non
     if role not in ("owner","manager","counter","processing","driver"): raise HTTPException(400,"Invalid role")
     sid=str(uuid.uuid4()); salt=secrets.token_hex(16); pw_hash=hash_password(password,salt)
     if not DATABASE_URL: return {"id":sid,"name":name,"email":email,"role":role,"active":bool(payload.get("active",True))}
-    with db() as conn:
+    with db() as conn, conn.transaction():
+        if not conn.execute("SELECT 1 FROM stores WHERE id=%s AND brand_id=%s AND active=TRUE", (location_id, business_id)).fetchone():
+            raise HTTPException(404, "Store not found in this brand")
         try:
             row=conn.execute("INSERT INTO staff_users (id,name,email,role,active,business_id,location_id,password_salt,password_hash) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *",(sid,name,email,role,bool(payload.get("active",True)),business_id,location_id,salt,pw_hash)).fetchone()
         except Exception:
             raise HTTPException(409,"A staff user with this email already exists")
-    return dict(row)
+        sync_staff_role(conn, sid, role, business_id, location_id)
+    return safe_staff_record(row)
 
 @app.put("/api/admin/staff/{staff_id}")
 def update_staff(staff_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
-    actor=require_permission("admin",x_session_token)
+    actor=require_staff_administrator(x_session_token)
     role=str(payload.get("role","counter")).strip().lower(); password=str(payload.get("password",""))
     if role not in ("owner","manager","counter","processing","driver"): raise HTTPException(400,"Invalid role")
     if not DATABASE_URL: return {"id":staff_id,**payload}
-    with db() as conn:
+    with db() as conn, conn.transaction():
         current=conn.execute("SELECT * FROM staff_users WHERE id=%s",(staff_id,)).fetchone()
         if not current: raise HTTPException(404,"Staff user not found")
-        if not has_role(actor,"super_admin") and current.get("business_id")!=actor.get("business_id"): raise HTTPException(403,"Cannot manage staff outside your brand")
+        validate_staff_target(conn, actor, staff_id)
+        if not has_role(actor,"super_admin") and current.get("business_id")!=(actor.get("active_brand_id") or actor.get("business_id")): raise HTTPException(403,"Cannot manage staff outside your brand")
         data=dict(current); data.update(payload)
+        new_store = str(data.get("location_id") or current["location_id"])
+        if not conn.execute("SELECT 1 FROM stores WHERE id=%s AND brand_id=%s AND active=TRUE", (new_store, current["business_id"])).fetchone():
+            raise HTTPException(404, "Store not found in this brand")
+        data["location_id"] = new_store
         if password:
             if len(password)<8: raise HTTPException(400,"Password must be at least 8 characters")
             salt=secrets.token_hex(16); pw_hash=hash_password(password,salt)
             row=conn.execute("UPDATE staff_users SET name=%s,email=%s,role=%s,active=%s,location_id=%s,password_salt=%s,password_hash=%s,updated_at=NOW() WHERE id=%s RETURNING *",(str(data["name"]).strip(),str(data["email"]).strip().lower(),role,bool(data.get("active",True)),str(data.get("location_id","main")),salt,pw_hash,staff_id)).fetchone()
         else:
             row=conn.execute("UPDATE staff_users SET name=%s,email=%s,role=%s,active=%s,location_id=%s,updated_at=NOW() WHERE id=%s RETURNING *",(str(data["name"]).strip(),str(data["email"]).strip().lower(),role,bool(data.get("active",True)),str(data.get("location_id","main")),staff_id)).fetchone()
-    return dict(row)
+        sync_staff_role(conn, staff_id, role, current["business_id"], new_store)
+    return safe_staff_record(row)
 
 @app.post("/api/auth/bootstrap")
 def bootstrap_owner(payload: dict):
@@ -2380,14 +2651,15 @@ def bootstrap_owner(payload: dict):
     email=str(payload.get("email","")).strip().lower()
     name=str(payload.get("name","Owner")).strip()
     if len(password)<8 or not email: raise HTTPException(400,"Email and password of at least 8 characters are required")
-    with db() as conn:
+    with db() as conn, conn.transaction():
+        conn.execute("SELECT pg_advisory_xact_lock(471005)")
         existing=conn.execute("SELECT 1 FROM staff_users WHERE password_hash IS NOT NULL LIMIT 1").fetchone()
         if existing: raise HTTPException(409,"Owner bootstrap is already complete")
         salt=secrets.token_hex(16); pw_hash=hash_password(password,salt); sid=str(uuid.uuid4())
         row=conn.execute("INSERT INTO staff_users (id,name,email,role,active,business_id,location_id,password_salt,password_hash) VALUES (%s,%s,%s,'owner',TRUE,'fabclean','main',%s,%s) RETURNING *",(sid,name,email,salt,pw_hash)).fetchone()
         conn.execute("INSERT INTO user_role_assignments (id,user_id,role,scope_type,brand_id,store_id,active) VALUES (%s,%s,'super_admin','platform',NULL,NULL,TRUE) ON CONFLICT DO NOTHING",(f"platform-super-{sid}",sid))
         conn.execute("INSERT INTO user_role_assignments (id,user_id,role,scope_type,brand_id,store_id,active) VALUES (%s,%s,'brand_admin','brand','fabclean',NULL,TRUE) ON CONFLICT DO NOTHING",(f"brand-admin-{sid}",sid))
-    staff=dict(row); staff["assignments"]=get_user_assignments(sid)
+    staff=safe_staff_record(row); staff["assignments"]=get_user_assignments(sid)
     return {"staff":staff}
 
 @app.post("/api/auth/sign-in")
@@ -2420,22 +2692,23 @@ def auth_me(x_session_token: str | None = Header(default=None)):
 
 @app.get("/api/admin/login-audit")
 def login_audit_history(limit: int = 100, x_session_token: str | None = Header(default=None)):
-    require_permission("admin",x_session_token)
+    staff = require_permission("admin",x_session_token)
+    brand_id, store_id = operational_scope(staff)
     safe_limit=max(1,min(int(limit or 100),500))
     if not DATABASE_URL:
         return {"logins":[]}
     with db() as conn:
         rows=conn.execute(
-            "SELECT id,staff_id,staff_name,staff_email,staff_role,ip_address,city,region,country,timezone,user_agent,login_at FROM login_audit ORDER BY login_at DESC LIMIT %s",
-            (safe_limit,),
+            "SELECT id,staff_id,staff_name,staff_email,staff_role,ip_address,city,region,country,timezone,user_agent,login_at FROM login_audit WHERE business_id=%s AND location_id=%s ORDER BY login_at DESC LIMIT %s",
+            (brand_id,store_id,safe_limit),
         ).fetchall()
     return {"logins":[dict(r) for r in rows]}
 
 @app.get("/api/subscriptions/plans")
 def list_subscription_plans(include_inactive: bool = False, x_session_token: str | None = Header(default=None)):
-    if include_inactive: require_permission("admin",x_session_token)
-    elif not capability_enabled("subscriptions_enabled", True): return {"plans":[],"enabled":False}
-    if not DATABASE_URL: return {"plans":[]}
+    require_permission("admin" if include_inactive else "orders",x_session_token)
+    if not include_inactive and not capability_enabled("subscriptions_enabled", True): return {"plans":[],"enabled":False}
+    if not DATABASE_URL: return {"plans": list(memory_catalogs["subscription_plans"].values())}
     with db() as conn:
         rows=conn.execute("SELECT * FROM subscription_plans ORDER BY name").fetchall() if include_inactive else conn.execute("SELECT * FROM subscription_plans WHERE active=TRUE ORDER BY name").fetchall()
     return {"plans":[{**dict(r),"eligible_service_ids":list(r.get("eligible_service_ids") or [])} for r in rows]}
@@ -2445,8 +2718,11 @@ def create_subscription_plan(payload: dict, x_session_token: str | None = Header
     require_permission("admin",x_session_token)
     frequency=str(payload.get("frequency","weekly"))
     if frequency not in ("weekly","biweekly","monthly"): raise HTTPException(400,"Invalid frequency")
+    catalog = {s["id"] for s in get_service_values()}
+    if any(s not in catalog for s in payload.get("eligible_service_ids", [])):
+        raise HTTPException(404, "Service not found in the active store")
     pid=str(uuid.uuid4())
-    if not DATABASE_URL: return {"id":pid,**payload}
+    if not DATABASE_URL: return save_memory_record("subscription_plans", {**payload, "id": pid})
     with db() as conn:
         row=conn.execute("INSERT INTO subscription_plans (id,name,description,frequency,discount_percent,minimum_order,eligible_service_ids,active) VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s) RETURNING *",(pid,str(payload.get("name","")).strip(),str(payload.get("description","")),frequency,float(payload.get("discount_percent",0) or 0),float(payload.get("minimum_order",0) or 0),json.dumps(list(payload.get("eligible_service_ids") or [])),bool(payload.get("active",True)))).fetchone()
     out=dict(row); out["eligible_service_ids"]=list(out.get("eligible_service_ids") or []); return out
@@ -2454,8 +2730,9 @@ def create_subscription_plan(payload: dict, x_session_token: str | None = Header
 @app.get("/api/customers/{customer_id}/subscriptions")
 def customer_subscriptions(customer_id: str, x_session_token: str | None = Header(default=None)):
     require_permission("customers",x_session_token)
+    get_customer(customer_id,x_session_token)
     if not capability_enabled("subscriptions_enabled", True): return {"subscriptions":[],"enabled":False}
-    if not DATABASE_URL: return {"subscriptions":[],"enabled":True}
+    if not DATABASE_URL: return {"subscriptions": [dict(r) for r in memory_catalogs["customer_subscriptions"].values() if r["customer_id"] == customer_id], "enabled": True}
     with db() as conn:
         rows=conn.execute("SELECT cs.*, sp.name AS plan_name, sp.frequency, sp.discount_percent FROM customer_subscriptions cs JOIN subscription_plans sp ON sp.id=cs.plan_id WHERE cs.customer_id=%s ORDER BY cs.created_at DESC",(customer_id,)).fetchall()
     return {"subscriptions":[dict(r) for r in rows]}
@@ -2463,9 +2740,14 @@ def customer_subscriptions(customer_id: str, x_session_token: str | None = Heade
 @app.post("/api/customers/{customer_id}/subscriptions")
 def create_customer_subscription(customer_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
     staff=require_permission("customers",x_session_token)
+    get_customer(customer_id,x_session_token)
+    validate_order_references(payload, x_session_token)
     require_capability("subscriptions_enabled", "Subscriptions")
     sid=str(uuid.uuid4()); start=str(payload.get("start_date") or datetime.now(timezone.utc).date().isoformat())
-    if not DATABASE_URL: return {"id":sid,"customer_id":customer_id,**payload,"status":"active","start_date":start}
+    if not DATABASE_URL:
+        if payload.get("plan_id") not in memory_catalogs["subscription_plans"]:
+            raise HTTPException(404, "Subscription plan not found")
+        return save_memory_record("customer_subscriptions", {**payload,"id":sid,"customer_id":customer_id,"status":"active","start_date":start})
     with db() as conn:
         plan=conn.execute("SELECT * FROM subscription_plans WHERE id=%s AND active=TRUE",(payload.get("plan_id"),)).fetchone()
         if not plan: raise HTTPException(400,"Subscription plan is not available")
@@ -2476,7 +2758,10 @@ def create_customer_subscription(customer_id: str, payload: dict, x_session_toke
 def update_customer_subscription(subscription_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
     require_permission("customers",x_session_token)
     require_capability("subscriptions_enabled", "Subscriptions")
-    if not DATABASE_URL: return {"id":subscription_id,**payload}
+    validate_order_references(payload, x_session_token)
+    if not DATABASE_URL:
+        allowed = {k: v for k, v in payload.items() if k in ("status", "next_pickup_date", "service_area_id", "scheduled_slot_id", "service_address", "service_postal_code")}
+        return save_memory_record("customer_subscriptions", {**allowed, "id": subscription_id}, updating=True)
     with db() as conn:
         current=conn.execute("SELECT * FROM customer_subscriptions WHERE id=%s",(subscription_id,)).fetchone()
         if not current: raise HTTPException(404,"Subscription not found")
@@ -2626,6 +2911,26 @@ def prepare_notification(payload: dict, x_session_token: str | None = Header(def
     kind=str(payload.get("notification_type","order_received"))
     if kind not in NOTIFICATION_TEMPLATES: raise HTTPException(400,"Unsupported notification type")
     customer_id=payload.get("customer_id"); order_id=payload.get("order_id"); subscription_id=payload.get("subscription_id")
+    if not customer_id and not order_id and not subscription_id:
+        raise HTTPException(400, "A customer, order or subscription is required")
+    if customer_id: get_customer(customer_id, x_session_token)
+    if order_id:
+        order = get_order(order_id, x_session_token)
+        data = order.model_dump(mode="json") if hasattr(order, "model_dump") else order
+        linked_customer = data.get("customer", {}).get("id")
+        if customer_id and customer_id != linked_customer:
+            raise HTTPException(400, "Customer does not belong to this order")
+        customer_id = linked_customer
+    if subscription_id:
+        if not DATABASE_URL:
+            subscription = memory_catalogs["customer_subscriptions"].get(subscription_id)
+        else:
+            with db() as conn:
+                subscription = conn.execute("SELECT customer_id FROM customer_subscriptions WHERE id=%s", (subscription_id,)).fetchone()
+        if not subscription: raise HTTPException(404, "Subscription not found")
+        if customer_id and customer_id != subscription["customer_id"]:
+            raise HTTPException(400, "Customer does not belong to this subscription")
+        customer_id = subscription["customer_id"]
     name=str(payload.get("customer_name","Customer")); order_number=str(payload.get("order_number",""))
     default=NOTIFICATION_TEMPLATES[kind].format(name=name,order_number=order_number)
     message=str(payload.get("message") or default)
@@ -2634,12 +2939,13 @@ def prepare_notification(payload: dict, x_session_token: str | None = Header(def
         with db() as conn:
             row=conn.execute("INSERT INTO customer_notifications (id,customer_id,order_id,subscription_id,notification_type,channel,message,status,staff_id,staff_name) VALUES (%s,%s,%s,%s,%s,%s,%s,'prepared',%s,%s) RETURNING *",(nid,customer_id,order_id,subscription_id,kind,str(payload.get("channel","manual")),message,staff.get("id"),staff.get("name",""))).fetchone()
         return dict(row)
-    return {"id":nid,"notification_type":kind,"message":message,"status":"prepared"}
+    return save_memory_record("customer_notifications", {"id":nid,"customer_id":customer_id,"order_id":order_id,"subscription_id":subscription_id,"notification_type":kind,"message":message,"status":"prepared"})
 
 @app.get("/api/customers/{customer_id}/notifications")
 def customer_notifications(customer_id: str, x_session_token: str | None = Header(default=None)):
     require_permission("customers",x_session_token)
-    if not DATABASE_URL: return {"notifications":[]}
+    get_customer(customer_id,x_session_token)
+    if not DATABASE_URL: return {"notifications": [dict(r) for r in memory_catalogs["customer_notifications"].values() if r.get("customer_id") == customer_id]}
     with db() as conn:
         rows=conn.execute("SELECT * FROM customer_notifications WHERE customer_id=%s ORDER BY created_at DESC",(customer_id,)).fetchall()
     return {"notifications":[dict(r) for r in rows]}
@@ -2697,7 +3003,9 @@ def require_ai(permission: str, x_session_token: str | None):
 def ai_customer_summary(customer_id: str, x_session_token: str | None = Header(default=None)):
     require_ai("customers", x_session_token)
     customer = get_customer(customer_id, x_session_token)
-    orders = [o for o in get_order_values() if o.get("customer",{}).get("id")==customer_id]
+    customer = customer.model_dump(mode="json") if hasattr(customer, "model_dump") else customer
+    scope = operational_scope(get_current_staff(x_session_token))
+    orders = [o for o in get_order_values() if o.get("customer",{}).get("id")==customer_id and order_in_scope(o, *scope)]
     orders.sort(key=lambda o: o.get("created_at",""), reverse=True)
     total = round(sum(float(o.get("total",0) or 0) for o in orders),2)
     service_counts = {}
@@ -2731,6 +3039,7 @@ def ai_customer_summary(customer_id: str, x_session_token: str | None = Header(d
 @app.post("/api/ai/orders/{order_id}/inspection-suggest")
 def ai_inspection_suggest(order_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
     require_ai("processing", x_session_token)
+    get_order(order_id, x_session_token)
     text = (str(payload.get("notes","")) + " " + str(payload.get("service_name",""))).lower()
     tags=[]
     rules=[("stain","stain"),("tear","tear"),("rip","tear"),("button","missing button"),("loose","loose stitching"),("damage","existing damage"),("silk","delicate material"),("wool","delicate material"),("fade","color fading risk")]
@@ -2787,7 +3096,8 @@ def ai_communication_draft(order_id: str, payload: dict, x_session_token: str | 
 
 @app.get("/api/dashboard")
 def dashboard(x_session_token: str | None = Header(default=None)):
-    require_permission("orders",x_session_token)
+    staff=require_permission("orders",x_session_token)
+    brand_id, store_id = operational_scope(staff)
     if DATABASE_URL:
         with db() as conn:
             row = conn.execute("""
@@ -2802,7 +3112,8 @@ def dashboard(x_session_token: str | None = Header(default=None)):
                     COALESCE(SUM(CASE WHEN payload->>'payment_status'='paid' THEN NULLIF(payload->>'total','')::numeric ELSE 0 END),0) AS revenue,
                     COALESCE(AVG(CASE WHEN payload->>'payment_status'='paid' THEN NULLIF(payload->>'total','')::numeric END),0) AS average_order_value
                 FROM orders
-            """).fetchone()
+                WHERE payload->>'business_id'=%s AND payload->>'location_id'=%s
+            """,(brand_id,store_id)).fetchone()
         d=dict(row)
         return {
             "orders_today": int(d.get("orders_today") or 0),
@@ -2817,7 +3128,7 @@ def dashboard(x_session_token: str | None = Header(default=None)):
             "database": "postgres",
         }
 
-    values = get_order_values()
+    values = [o for o in get_order_values() if order_in_scope(o,brand_id,store_id)]
     today = datetime.now(timezone.utc).date().isoformat()
     today_values = [o for o in values if str(o.get("created_at",""))[:10] == today]
     paid = [o for o in values if o.get("payment_status") == "paid"]
