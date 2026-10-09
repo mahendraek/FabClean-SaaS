@@ -72,7 +72,7 @@ export default function PickupSchedule(){
     <View style={s.summary}><Text style={s.summaryValue}>{loading?"…":events.length}</Text><Text style={s.summaryLabel}>scheduled event{events.length===1?"":"s"} for {appliedDate||"all dates"}</Text></View>
 
     <View style={s.list}>
-      {events.length===0?<View style={s.empty}><Text style={s.emptyTitle}>No scheduled pickups or deliveries</Text><Text style={s.meta}>Change the date or search filters to view another schedule.</Text></View>:events.map(e=><Pressable key={e.key} style={s.card} onPress={()=>router.push("/order-detail?id="+encodeURIComponent(e.order.id))}>
+      {events.length===0?<View style={s.empty}><Text style={s.emptyTitle}>No scheduled pickups or deliveries</Text><Text style={s.meta}>Change the date or search filters to view another schedule.</Text></View>:events.map(e=><Pressable key={e.key} style={s.card} onPress={()=>router.push({pathname:"/order-detail",params:{id:e.order.id}})}>
         <View style={[s.typeBadge,e.type==="pickup"?s.pickup:s.delivery]}><Text style={s.typeText}>{e.type==="pickup"?"PICKUP":"DELIVERY"}</Text></View>
         <View style={s.cardMain}><Text style={s.orderNo}>{e.order.order_number} · {e.order.customer.name}</Text><Text style={s.meta}>{e.order.customer.phone} · {e.slot||"Time not set"}</Text><Text style={s.meta}>Status: {String(e.order.status||"received").replaceAll("_"," ")}</Text></View>
         <Text style={s.open}>Open →</Text>

@@ -88,6 +88,56 @@ class StoreOperationsAPITests(unittest.TestCase):
     def action(self, actor, handoff, action):
         return self.ok(actor, "post", "/api/handoffs/" + handoff["id"] + "/actions", {"action": action})
 
+    def test_context_change_mid_request_preserves_original_authorization_and_rls(self):
+        original = server.require_permission
+        def switch_before_handler_authorization(permission, token):
+            with server.db() as conn:
+                conn.execute("UPDATE staff_sessions SET active_store_id=%s WHERE token=%s", (self.stores[1], token))
+            staff = original(permission, token)
+            self.assertEqual(server.operational_scope(staff), (self.brand, self.stores[0]))
+            return staff
+        try:
+            with patch.object(server, "require_permission", side_effect=switch_before_handler_authorization):
+                response = self.request("admin", "get", "/api/orders")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(self.ok("admin", "get", "/api/context")["active_store"]["id"], self.stores[1])
+        finally:
+            self.ok("admin", "put", "/api/context", {"brand_id": self.brand, "store_id": self.stores[0]})
+
+    def test_stale_store_header_rejects_writes_after_another_tab_switches(self):
+        headers = {"X-Session-Token": self.tokens["admin"], "X-Active-Brand-ID": self.brand, "X-Active-Store-ID": self.stores[0]}
+        try:
+            self.ok("admin", "put", "/api/context", {"brand_id": self.brand, "store_id": self.stores[1]})
+            response = self.client.post("/api/orders", headers=headers, json={"customer_name": "Should never be created", "items": []})
+            self.assertEqual(response.status_code, 409)
+            headers["X-Active-Store-ID"] = self.stores[1]
+            self.assertEqual(self.client.get("/api/orders", headers=headers).status_code, 200)
+            del headers["X-Active-Brand-ID"]
+            self.assertEqual(self.client.get("/api/orders", headers=headers).status_code, 409)
+        finally:
+            self.ok("admin", "put", "/api/context", {"brand_id": self.brand, "store_id": self.stores[0]})
+
+    def test_both_order_endpoints_require_assembly_before_ready(self):
+        order = self.order()
+        garments = self.ok("source", "get", "/api/orders/" + order["id"] + "/garments")["garments"]
+        self.assertTrue(garments)
+        for suffix in ("", "/status"):
+            for status in ("ready_for_pickup", "collected", "completed"):
+                response = self.request("source", "put", "/api/orders/" + order["id"] + suffix, {"status": status})
+                self.assertEqual(response.status_code, 400)
+        for garment in garments:
+            self.ok("source", "post", "/api/orders/" + order["id"] + "/garments/" + garment["garment_code"] + "/scan", {"stage": "assembly"})
+        self.assertEqual(self.ok("source", "put", "/api/orders/" + order["id"] + "/status", {"status": "ready_for_pickup"})["status"], "ready_for_pickup")
+
+    def test_sign_out_revokes_token_on_server(self):
+        token = self.prefix + "-logout-" + uuid.uuid4().hex
+        with server.db() as conn:
+            conn.execute("INSERT INTO staff_sessions(token,staff_id,expires_at,active_brand_id,active_store_id) VALUES (%s,%s,NOW()+INTERVAL '1 day',%s,%s)", (token, self.users["source"], self.brand, self.stores[0]))
+        headers = {"X-Session-Token": token}
+        self.assertEqual(self.client.get("/api/orders", headers=headers).status_code, 200)
+        self.assertEqual(self.client.post("/api/auth/sign-out", headers=headers).status_code, 200)
+        self.assertEqual(self.client.get("/api/orders", headers=headers).status_code, 401)
+
     def test_handoff_lifecycle_manifest_isolation_and_replays(self):
         order = self.order(); handoff = self.dispatch(order)
         try:

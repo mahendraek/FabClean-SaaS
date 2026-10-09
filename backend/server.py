@@ -8,6 +8,7 @@ import time
 import httpx
 from datetime import datetime, timezone, timedelta
 from contextlib import contextmanager
+from contextvars import ContextVar
 
 import psycopg
 from psycopg.rows import dict_row
@@ -25,6 +26,8 @@ from models import Service, Order, OrderCreate, Customer, CustomerCreate
 from seed import SERVICES
 from store_operations import STORE_TYPES, validate_hierarchy, next_handoff_status, work_manifest, install_store_operations
 from tenant_scope import current_scope, ScopedMemoryDict, configure_connection, migration_installed, install_isolation
+
+request_staff = ContextVar("request_staff", default=None)
 
 app = FastAPI(title="FabClean API", version="1.2.0")
 app.add_middleware(
@@ -132,6 +135,7 @@ async def isolate_request(request: Request, call_next):
     resolve their own authorized scope. Context never survives a request.
     """
     token = current_scope.set(None)
+    staff_token = request_staff.set(None)
     try:
         path = request.url.path
         exempt = path in ("/", "/api/health", "/api/context") or path.startswith(("/api/auth/", "/api/platform/", "/api/brand/stores"))
@@ -139,11 +143,17 @@ async def isolate_request(request: Request, call_next):
             staff = get_current_staff(request.headers.get("x-session-token"))
             if not staff:
                 return JSONResponse(status_code=401, content={"detail": "Staff sign-in required"})
-            current_scope.set(operational_scope(staff))
+            scope = operational_scope(staff)
+            expected = (request.headers.get("x-active-brand-id"), request.headers.get("x-active-store-id"))
+            if any(value is not None for value in expected) and expected != scope:
+                raise HTTPException(409, "Active store changed; refresh before continuing.")
+            current_scope.set(scope)
+            request_staff.set((request.headers.get("x-session-token"), staff))
         return await call_next(request)
     except HTTPException as exc:
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
     finally:
+        request_staff.reset(staff_token)
         current_scope.reset(token)
 
 @contextmanager
@@ -866,6 +876,9 @@ def get_user_assignments(user_id: str):
     return [dict(r) for r in rows]
 
 def get_current_staff(x_session_token: str | None):
+    snapshot = request_staff.get()
+    if snapshot is not None and snapshot[0] == x_session_token:
+        return snapshot[1]
     if not x_session_token: return None
     if not DATABASE_URL:
         if x_session_token != "demo-token": return None
@@ -1979,6 +1992,14 @@ def create_order_payment(order_id: str, payload: dict, x_session_token: str | No
     _,paid,balance=payment_totals(order_id,order_total)
     return {"payment":item,"paid_total":paid,"balance_due":balance,"payment_status":status}
 
+def validate_order_readiness(order_id: str, status):
+    if status in ("ready_for_pickup","collected","completed") and DATABASE_URL:
+        with db() as conn:
+            garment_rows=conn.execute("SELECT assembled FROM order_garments WHERE order_id=%s",(order_id,)).fetchall()
+        if garment_rows and any(not bool(g["assembled"]) for g in garment_rows):
+            raise HTTPException(400,"Assembly is incomplete. Scan all garment tags before Ready for Pickup.")
+
+
 @app.put("/api/orders/{order_id}")
 def update_order(order_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
     staff=require_permission("orders",x_session_token)
@@ -1995,12 +2016,7 @@ def update_order(order_id: str, payload: dict, x_session_token: str | None = Hea
     if not updates:
         raise HTTPException(400, "No supported order fields supplied")
 
-    requested_status=updates.get("status")
-    if requested_status in ("ready_for_pickup","collected","completed") and DATABASE_URL:
-        with db() as conn:
-            garment_rows=conn.execute("SELECT assembled FROM order_garments WHERE order_id=%s",(order_id,)).fetchall()
-        if garment_rows and any(not bool(g["assembled"]) for g in garment_rows):
-            raise HTTPException(400,"Assembly is incomplete. Scan all garment tags before Ready for Pickup.")
+    validate_order_readiness(order_id, updates.get("status"))
 
     def apply(order):
         before = dict(order)
@@ -2291,6 +2307,7 @@ def delete_order_photo(order_id: str, photo_id: str, x_session_token: str | None
 def update_order_status(order_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
     staff=require_permission("orders",x_session_token)
     get_order(order_id,x_session_token)
+    validate_order_readiness(order_id, payload.get("status"))
     if not DATABASE_URL:
         order = memory_orders.get(order_id)
         if not order:
