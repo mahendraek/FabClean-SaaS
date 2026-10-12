@@ -71,10 +71,15 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   });
   const text = await res.text();
   if (started !== generation) throw new Error("Active context changed; reload this screen.");
-  const data = text ? JSON.parse(text) : null;
+  let data: any = null;
+  try { data = text ? JSON.parse(text) : null; }
+  catch {
+    if (res.ok) throw new Error("The server returned an invalid response. Retry shortly.");
+  }
   if (!res.ok) {
-    const error: any = new Error(data?.detail || "Request failed");
+    const error: any = new Error(typeof data?.detail === "string" ? data.detail : `Request failed (HTTP ${res.status}). Retry shortly.`);
     error.status = res.status;
+    error.retryAfter = res.headers?.get("Retry-After") || null;
     if (res.status === 401) await setStoredSession(null, "");
     throw error;
   }

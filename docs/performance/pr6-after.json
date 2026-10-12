@@ -1,0 +1,43 @@
+{
+  "orders_seeded": 50,
+  "requests": 160,
+  "workers": 8,
+  "elapsed_seconds": 2.434,
+  "requests_per_second": 65.73,
+  "errors": 0,
+  "paths": {
+    "/api/orders": {
+      "p50_ms": 120.83,
+      "p95_ms": 209.64,
+      "p99_ms": 236.56
+    },
+    "/api/dashboard": {
+      "p50_ms": 114.08,
+      "p95_ms": 178.19,
+      "p99_ms": 305.61
+    },
+    "/api/context": {
+      "p50_ms": 106.32,
+      "p95_ms": 182.11,
+      "p99_ms": 277.08
+    },
+    "/api/handoffs": {
+      "p50_ms": 107.83,
+      "p95_ms": 218.97,
+      "p99_ms": 265.78
+    }
+  },
+  "environment": {
+    "python": "3.12.14",
+    "http_client": "FastAPI TestClient",
+    "database": "local PostgreSQL",
+    "cpu_count": 5
+  },
+  "pool": {
+    "requests_num": 600,
+    "connections_num": 5,
+    "requests_queued": 238,
+    "requests_wait_ms": 1269,
+    "size": 8
+  }
+}

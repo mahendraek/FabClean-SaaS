@@ -80,3 +80,27 @@ test('operational requests pin the displayed context and clear it on session cha
   await api.setStoredSession({ id: 'u2' }, 'new'); await api.api.get('/orders');
   assert.equal(calls[2][1].headers['X-Active-Store-ID'], undefined);
 });
+test('HTML gateway errors retain HTTP status and clear retry guidance', async () => {
+ const { api, sandbox } = await setup();
+ sandbox.fetch = async () => ({ ok: false, status: 503, text: async () => '<html>Unavailable</html>' });
+ await assert.rejects(api.api.get('/orders'), e => e.status === 503 && /HTTP 503/.test(e.message));
+});
+test('non-JSON unauthorized responses clear expired credentials', async () => {
+ const { api, sandbox } = await setup(); await api.setStoredSession({ id: 'u1' }, 'expired');
+ sandbox.fetch = async () => ({ ok: false, status: 401, text: async () => '<html>Unauthorized</html>' });
+ await assert.rejects(api.api.get('/orders'), e => e.status === 401); assert.equal(api.getStoredToken(), '');
+});
+test('rate limits expose retry guidance without clearing the session', async () => {
+ const { api, sandbox } = await setup(); await api.setStoredSession({ id: 'u1' }, 'token');
+ sandbox.fetch = async () => ({ ok: false, status: 429, headers: { get: () => '120' }, text: async () => '{"detail":"Too many attempts"}' });
+ await assert.rejects(api.api.post('/auth/sign-in', {}), e => e.status === 429 && e.retryAfter === '120'); assert.equal(api.getStoredToken(), 'token');
+});
+test('permission removed during selection restoration discards the preference', async () => {
+ const exports = {}; let removed = false;
+ const module = { api: {
+  get: async () => ({ staff: { id: 'u1' }, active_brand: { id: 'b1' }, active_store: { id: 's1' }, brands: [{ id: 'b1' }], stores: [{ id: 's2', brand_id: 'b1' }] }),
+  put: async () => { const e = new Error('Revoked'); e.status = 403; throw e; }
+ }, readPreference: async () => '{"brand_id":"b1","store_id":"s2"}', writePreference: async (key, value) => { assert.equal(key, 'fabclean_context_u1'); assert.equal(value, null); removed = true; } };
+ vm.runInNewContext(selectionSource, { exports, require: name => name === './api' ? module : name === 'react-native' ? { StyleSheet: { create: x => x } } : name === './theme' ? { colors: {} } : {} });
+ await exports.restoreSelection(); assert.equal(removed, true);
+});

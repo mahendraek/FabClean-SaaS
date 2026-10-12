@@ -1,0 +1,30 @@
+{
+  "orders_seeded": 50,
+  "requests": 160,
+  "workers": 8,
+  "elapsed_seconds": 3.729,
+  "requests_per_second": 42.9,
+  "errors": 0,
+  "paths": {
+    "/api/orders": {
+      "p50_ms": 201.42,
+      "p95_ms": 275.99,
+      "p99_ms": 284.68
+    },
+    "/api/dashboard": {
+      "p50_ms": 203.14,
+      "p95_ms": 252.16,
+      "p99_ms": 259.05
+    },
+    "/api/context": {
+      "p50_ms": 132.23,
+      "p95_ms": 169.79,
+      "p99_ms": 187.94
+    },
+    "/api/handoffs": {
+      "p50_ms": 195.57,
+      "p95_ms": 261.12,
+      "p99_ms": 268.91
+    }
+  }
+}

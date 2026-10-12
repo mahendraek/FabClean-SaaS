@@ -17,7 +17,13 @@ export async function restoreSelection() {
   if (!context.brands.some(b => b.id === selected.brand_id) || !context.stores.some(s => s.id === selected.store_id && s.brand_id === selected.brand_id)) {
     await writePreference(preferenceKey(context.staff.id), null); return;
   }
-  if (context.active_brand?.id !== selected.brand_id || context.active_store?.id !== selected.store_id) await api.put("/context", selected);
+  if (context.active_brand?.id !== selected.brand_id || context.active_store?.id !== selected.store_id) {
+    try { await api.put("/context", selected); }
+    catch (error: any) {
+      if (error.status !== 403 && error.status !== 404) throw error;
+      await writePreference(preferenceKey(context.staff.id), null);
+    }
+  }
 }
 export function ActiveContext({ children }: { children: (key: string) => React.ReactNode }) {
   const router = useRouter(), pathname = usePathname();

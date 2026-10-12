@@ -9,6 +9,9 @@ import httpx
 from datetime import datetime, timezone, timedelta
 from contextlib import contextmanager
 from contextvars import ContextVar
+from functools import wraps
+import logging
+import math
 
 import psycopg
 from psycopg.rows import dict_row
@@ -27,15 +30,25 @@ from seed import SERVICES
 from store_operations import STORE_TYPES, validate_hierarchy, next_handoff_status, work_manifest, install_store_operations
 from tenant_scope import current_scope, ScopedMemoryDict, configure_connection, migration_installed, install_isolation
 
+from database_pool import get_pool, close_pools
+from psycopg_pool import PoolTimeout, TooManyRequests
+
+from security import cors_origins, hash_password, verify_password, rate_keys, reserve_login, install_security, MemoryLoginLimiter
+
+transaction_connection = ContextVar("transaction_connection", default=None)
+login_limiter = MemoryLoginLimiter()
+access_logger = logging.getLogger("fabclean.access")
+access_logger.setLevel(logging.INFO)
+if not access_logger.handlers:
+    access_logger.addHandler(logging.StreamHandler())
+access_logger.propagate = False
+# Raw access URLs may contain query secrets; use structured route logs.
+logging.getLogger("uvicorn.access").disabled = True
+
 request_staff = ContextVar("request_staff", default=None)
 
 app = FastAPI(title="FabClean API", version="1.2.0")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
 
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
@@ -123,6 +136,15 @@ async def unavailable_reference(request, exc):
 async def invalid_ownership(request, exc):
     return JSONResponse(status_code=403, content={"detail": "Record ownership is not permitted"})
 
+@app.exception_handler(PoolTimeout)
+@app.exception_handler(TooManyRequests)
+def database_capacity(request, exc):
+    return JSONResponse(status_code=503, content={"detail": "Database is busy; retry shortly"}, headers={"Retry-After": "1"})
+
+@app.on_event("shutdown")
+def shutdown():
+    close_pools()
+
 @app.exception_handler(RaiseException)
 async def custody_conflict(request, exc):
     return JSONResponse(status_code=409, content={"detail": "Finish or cancel the open handoff before changing items or closing the order"})
@@ -134,6 +156,10 @@ async def isolate_request(request: Request, call_next):
     Context discovery, authentication and explicit platform/brand management
     resolve their own authorized scope. Context never survives a request.
     """
+    started = time.perf_counter()
+    request_id = str(uuid.uuid4())
+    status = 500
+    actor_id = None
     token = current_scope.set(None)
     staff_token = request_staff.set(None)
     try:
@@ -142,37 +168,60 @@ async def isolate_request(request: Request, call_next):
         if path.startswith("/api/") and not exempt and request.method != "OPTIONS":
             staff = get_current_staff(request.headers.get("x-session-token"))
             if not staff:
-                return JSONResponse(status_code=401, content={"detail": "Staff sign-in required"})
+                raise HTTPException(401, "Staff sign-in required")
             scope = operational_scope(staff)
             expected = (request.headers.get("x-active-brand-id"), request.headers.get("x-active-store-id"))
             if any(value is not None for value in expected) and expected != scope:
                 raise HTTPException(409, "Active store changed; refresh before continuing.")
+            actor_id = staff.get("id")
             current_scope.set(scope)
             request_staff.set((request.headers.get("x-session-token"), staff))
-        return await call_next(request)
+        response = await call_next(request)
+        status = response.status_code
+        response.headers["X-Request-ID"] = request_id
+        response.headers["Cache-Control"] = "no-store"
+        return response
     except HTTPException as exc:
-        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+        status = exc.status_code
+        return JSONResponse(status_code=status, content={"detail": exc.detail}, headers={**(exc.headers or {}), "X-Request-ID": request_id, "Cache-Control": "no-store"})
     finally:
+        route = request.scope.get("route")
+        access_logger.info(json.dumps({"request_id": request_id, "method": request.method,
+            "route": getattr(route, "path", "unmatched"), "status": status,
+            "duration_ms": round((time.perf_counter()-started)*1000, 2),
+            "actor_id": actor_id, "scope": current_scope.get()}))
         request_staff.reset(staff_token)
         current_scope.reset(token)
+
+# CORS must wrap authentication errors as well as successful routes.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins(os.environ),
+    expose_headers=["X-Request-ID", "Retry-After"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @contextmanager
 def db(maintenance: bool = False):
     if not DATABASE_URL:
         yield None
         return
-    conn = psycopg.connect(DATABASE_URL, autocommit=True, row_factory=dict_row)
-    try:
+    shared = transaction_connection.get()
+    if shared is not None:
+        if maintenance: raise RuntimeError("Maintenance connection cannot be used inside an operational transaction")
+        yield shared
+        return
+    with get_pool(DATABASE_URL).connection() as conn:
         configure_connection(conn, maintenance=maintenance)
         yield conn
-    finally:
-        conn.close()
 
 def init_db():
     if not DATABASE_URL:
         return
     with db(maintenance=True) as conn, conn.transaction():
         conn.execute("SELECT pg_advisory_xact_lock(471004)")
+        install_security(conn)
         if migration_installed(conn):
             install_store_operations(conn)
             return
@@ -821,8 +870,7 @@ ROLE_PERMISSIONS = {
 }
 
 def get_request_ip(request: Request):
-    forwarded=(request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-    return forwarded or (request.client.host if request.client else "")
+    return request.client.host if request.client else "unknown"
 
 def approximate_ip_location(ip: str):
     if not ip or ip.startswith("127.") or ip in ("::1","localhost"):
@@ -849,7 +897,7 @@ def record_login_audit(staff: dict, request: Request):
     if not DATABASE_URL:
         return
     ip=get_request_ip(request)
-    loc=approximate_ip_location(ip)
+    loc=approximate_ip_location(ip) if os.getenv("LOGIN_GEOLOCATION_ENABLED") == "true" else {"city":"","region":"","country":"","timezone":""}
     with db() as conn:
         conn.execute(
             "INSERT INTO login_audit (id,staff_id,staff_name,staff_email,staff_role,ip_address,city,region,country,timezone,user_agent,business_id,location_id) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
@@ -861,9 +909,6 @@ def record_login_audit(staff: dict, request: Request):
                 staff.get("active_store_id") or staff.get("location_id"),
             ),
         )
-
-def hash_password(password: str, salt: str):
-    return hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 120000).hex()
 
 def get_user_assignments(user_id: str):
     if not DATABASE_URL:
@@ -1692,7 +1737,9 @@ def operational_scope(staff: dict):
         raise HTTPException(403, "Brand access denied")
     if stores is not None and store_id not in stores:
         raise HTTPException(403, "Store access denied")
-    if DATABASE_URL:
+    snapshot = request_staff.get()
+    already_validated = snapshot is not None and snapshot[1] is staff and current_scope.get() == (brand_id, store_id)
+    if DATABASE_URL and not already_validated:
         with db() as conn:
             row = conn.execute("SELECT s.id FROM stores s JOIN brands b ON b.id=s.brand_id WHERE s.id=%s AND s.brand_id=%s AND s.active=TRUE AND b.status='active'", (store_id, brand_id)).fetchone()
         if not row:
@@ -1725,18 +1772,36 @@ def get_order(identifier: str, x_session_token: str | None = Header(default=None
                 return order
         raise HTTPException(404, "Order not found")
     with db() as conn:
-        rows = conn.execute("SELECT payload FROM orders ORDER BY created_at DESC").fetchall()
-        for row in rows:
-            order = row["payload"]
-            if not order_in_scope(order,brand_id,store_id):
-                continue
-            if identifier in (order.get("id"), order.get("order_number"), order.get("barcode_value")):
-                return order
-            if any(item.get("barcode_value") == identifier for item in order.get("items", [])):
-                return order
+        row = conn.execute("""SELECT payload FROM orders WHERE (id=%s OR order_number=%s OR barcode_value=%s
+            OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(payload->'items','[]'::jsonb)) AS item WHERE item->>'barcode_value'=%s))
+            AND payload->>'business_id'=%s AND payload->>'location_id'=%s
+            ORDER BY created_at DESC LIMIT 1""", (identifier,identifier,identifier,identifier,brand_id,store_id)).fetchone()
+        if row: return row["payload"]
     raise HTTPException(404, "Order not found")
 
+def store_creation_transaction(function):
+    @wraps(function)
+    def guarded(*args, **kwargs):
+        if not DATABASE_URL or transaction_connection.get() is not None:
+            return function(*args, **kwargs)
+        brand, store = current_scope.get() or ("", "")
+        with db() as conn, conn.transaction():
+            if function.__name__ == "generate_subscription_order":
+                subscription_id = args[0] if args else kwargs["subscription_id"]
+                key = json.dumps(["recurring", brand, store, subscription_id])
+                if not conn.execute("SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0)) AS locked", (key,)).fetchone()["locked"]:
+                    raise HTTPException(409, "Recurring order generation is already in progress")
+            # Store-local lock protects number allocation and customer/order writes.
+            key = json.dumps(["order-create", brand, store])
+            conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (key,))
+            marker = transaction_connection.set(conn)
+            try: return function(*args, **kwargs)
+            finally: transaction_connection.reset(marker)
+    return guarded
+
+
 @app.post("/api/orders")
+@store_creation_transaction
 def create_order(payload: OrderCreate, x_session_token: str | None = Header(default=None)):
     staff=require_permission("orders",x_session_token)
     brand_id, store_id = operational_scope(staff)
@@ -1957,13 +2022,29 @@ def sync_order_payment_status(order_id: str, order_total: float):
             conn.execute("UPDATE orders SET payload=%s::jsonb WHERE id=%s",(json.dumps(data),order_id))
     return status
 
+def order_transaction(function):
+    @wraps(function)
+    def guarded(order_id, *args, **kwargs):
+        if not DATABASE_URL: return function(order_id, *args, **kwargs)
+        with db() as conn, conn.transaction():
+            row = conn.execute("SELECT id FROM orders WHERE id=%s FOR UPDATE", (order_id,)).fetchone()
+            if not row: raise HTTPException(404, "Order not found")
+            marker = transaction_connection.set(conn)
+            try: return function(order_id, *args, **kwargs)
+            finally: transaction_connection.reset(marker)
+    return guarded
+
+
 @app.post("/api/orders/{order_id}/payments")
+@order_transaction
 def create_order_payment(order_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
     staff=require_permission("orders",x_session_token)
     order=get_order(order_id,x_session_token)
     data=order.model_dump(mode="json") if hasattr(order,"model_dump") else dict(order)
     order_total=float(data.get("total",0) or 0)
-    amount=float(payload.get("amount",0) or 0)
+    try: amount=float(payload.get("amount",0) or 0)
+    except (ValueError, TypeError): raise HTTPException(400,"Payment amount must be a finite number")
+    if not math.isfinite(amount): raise HTTPException(400,"Payment amount must be a finite number")
     kind=str(payload.get("transaction_type","payment")).lower()
     if kind not in ("payment","refund","adjustment"):
         raise HTTPException(400,"Invalid transaction type")
@@ -2001,6 +2082,7 @@ def validate_order_readiness(order_id: str, status):
 
 
 @app.put("/api/orders/{order_id}")
+@order_transaction
 def update_order(order_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
     staff=require_permission("orders",x_session_token)
     get_order(order_id,x_session_token)
@@ -2138,6 +2220,7 @@ def find_garment(garment_code: str, x_session_token: str | None = Header(default
     return {"garment":dict(garment),"order":dict(order["payload"])}
 
 @app.post("/api/orders/{order_id}/garments/{garment_code}/scan")
+@order_transaction
 def scan_garment(order_id: str, garment_code: str, payload: dict, x_session_token: str | None = Header(default=None)):
     staff=require_permission("orders",x_session_token)
     get_order(order_id,x_session_token)
@@ -2178,6 +2261,7 @@ def reprint_garment_tag(order_id: str, garment_code: str, x_session_token: str |
     return garment
 
 @app.post("/api/orders/{order_id}/assembly/complete")
+@order_transaction
 def complete_garment_assembly(order_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
     staff=require_permission("orders",x_session_token)
     get_order(order_id,x_session_token)
@@ -2186,7 +2270,7 @@ def complete_garment_assembly(order_id: str, payload: dict, x_session_token: str
     override=bool(payload.get("override",False))
     if missing and not override:
         raise HTTPException(400,f"{len(missing)} garment(s) are still missing from assembly")
-    if missing and override and staff.get("role") not in ("owner","manager"):
+    if missing and override and "admin" not in effective_permissions(staff):
         raise HTTPException(403,"Only Owner or Manager can override incomplete assembly")
     if DATABASE_URL:
         with db() as conn:
@@ -2304,6 +2388,7 @@ def delete_order_photo(order_id: str, photo_id: str, x_session_token: str | None
     return {"deleted": True}
 
 @app.put("/api/orders/{order_id}/status")
+@order_transaction
 def update_order_status(order_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
     staff=require_permission("orders",x_session_token)
     get_order(order_id,x_session_token)
@@ -2482,8 +2567,13 @@ def sync_staff_role(conn, staff_id, role, brand_id, store_id):
     mapped = {"owner": "brand_admin", "manager": "store_manager"}.get(role, role)
     scope = "brand" if mapped == "brand_admin" else "store"
     conn.execute("DELETE FROM user_role_assignments WHERE user_id=%s AND (id LIKE 'legacy-%%' OR id=%s)", (staff_id, "staff-default-" + staff_id))
-    conn.execute("INSERT INTO user_role_assignments (id,user_id,role,scope_type,brand_id,store_id) VALUES (%s,%s,%s,%s,%s,%s)",
-                 ("staff-default-" + staff_id, staff_id, mapped, scope, brand_id, None if scope == "brand" else store_id))
+    store = None if scope == "brand" else store_id
+    existing = conn.execute("SELECT id FROM user_role_assignments WHERE user_id=%s AND role=%s AND scope_type=%s AND brand_id=%s AND store_id IS NOT DISTINCT FROM %s", (staff_id, mapped, scope, brand_id, store)).fetchone()
+    if existing:
+        conn.execute("UPDATE user_role_assignments SET active=TRUE WHERE id=%s", (existing["id"],))
+    else:
+        conn.execute("INSERT INTO user_role_assignments (id,user_id,role,scope_type,brand_id,store_id) VALUES (%s,%s,%s,%s,%s,%s)",
+                     ("staff-default-" + staff_id, staff_id, mapped, scope, brand_id, store))
 
 def validate_staff_target(conn, actor, staff_id):
     if has_role(actor, "super_admin"): return
@@ -2739,7 +2829,7 @@ def create_staff(payload: dict, x_session_token: str | None = Header(default=Non
     store_ids=accessible_store_ids(actor,business_id)
     if store_ids is not None and location_id not in store_ids: raise HTTPException(403,"Cannot assign an inaccessible store")
     if not name or not email: raise HTTPException(400,"Name and email are required")
-    if len(password)<8: raise HTTPException(400,"Password must be at least 8 characters")
+    if not 8 <= len(password) <= 1024: raise HTTPException(400,"Password must be between 8 and 1024 characters")
     if role not in ("owner","manager","counter","processing","driver"): raise HTTPException(400,"Invalid role")
     sid=str(uuid.uuid4()); salt=secrets.token_hex(16); pw_hash=hash_password(password,salt)
     if not DATABASE_URL: return {"id":sid,"name":name,"email":email,"role":role,"active":bool(payload.get("active",True))}
@@ -2756,26 +2846,30 @@ def create_staff(payload: dict, x_session_token: str | None = Header(default=Non
 @app.put("/api/admin/staff/{staff_id}")
 def update_staff(staff_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
     actor=require_staff_administrator(x_session_token)
-    role=str(payload.get("role","counter")).strip().lower(); password=str(payload.get("password",""))
-    if role not in ("owner","manager","counter","processing","driver"): raise HTTPException(400,"Invalid role")
+    role=str(payload["role"]).strip().lower() if "role" in payload else None; password=str(payload.get("password",""))
+    if role is not None and role not in ("owner","manager","counter","processing","driver"): raise HTTPException(400,"Invalid role")
     if not DATABASE_URL: return {"id":staff_id,**payload}
     with db() as conn, conn.transaction():
-        current=conn.execute("SELECT * FROM staff_users WHERE id=%s",(staff_id,)).fetchone()
+        current=conn.execute("SELECT * FROM staff_users WHERE id=%s FOR UPDATE",(staff_id,)).fetchone()
         if not current: raise HTTPException(404,"Staff user not found")
         validate_staff_target(conn, actor, staff_id)
         if not has_role(actor,"super_admin") and current.get("business_id")!=(actor.get("active_brand_id") or actor.get("business_id")): raise HTTPException(403,"Cannot manage staff outside your brand")
+        role = role or current["role"]
         data=dict(current); data.update(payload)
         new_store = str(data.get("location_id") or current["location_id"])
         if not conn.execute("SELECT 1 FROM stores WHERE id=%s AND brand_id=%s AND active=TRUE", (new_store, current["business_id"])).fetchone():
             raise HTTPException(404, "Store not found in this brand")
         data["location_id"] = new_store
         if password:
-            if len(password)<8: raise HTTPException(400,"Password must be at least 8 characters")
+            if not 8 <= len(password) <= 1024: raise HTTPException(400,"Password must be between 8 and 1024 characters")
             salt=secrets.token_hex(16); pw_hash=hash_password(password,salt)
             row=conn.execute("UPDATE staff_users SET name=%s,email=%s,role=%s,active=%s,location_id=%s,password_salt=%s,password_hash=%s,updated_at=NOW() WHERE id=%s RETURNING *",(str(data["name"]).strip(),str(data["email"]).strip().lower(),role,bool(data.get("active",True)),str(data.get("location_id","main")),salt,pw_hash,staff_id)).fetchone()
         else:
             row=conn.execute("UPDATE staff_users SET name=%s,email=%s,role=%s,active=%s,location_id=%s,updated_at=NOW() WHERE id=%s RETURNING *",(str(data["name"]).strip(),str(data["email"]).strip().lower(),role,bool(data.get("active",True)),str(data.get("location_id","main")),staff_id)).fetchone()
-        sync_staff_role(conn, staff_id, role, current["business_id"], new_store)
+        if role != current["role"] or new_store != current["location_id"]:
+            sync_staff_role(conn, staff_id, role, current["business_id"], new_store)
+        if password or not bool(data.get("active", True)):
+            conn.execute("DELETE FROM staff_sessions WHERE staff_id=%s", (staff_id,))
     return safe_staff_record(row)
 
 @app.post("/api/auth/bootstrap")
@@ -2784,7 +2878,7 @@ def bootstrap_owner(payload: dict):
     password=str(payload.get("password",""))
     email=str(payload.get("email","")).strip().lower()
     name=str(payload.get("name","Owner")).strip()
-    if len(password)<8 or not email: raise HTTPException(400,"Email and password of at least 8 characters are required")
+    if not 8 <= len(password) <= 1024 or not email: raise HTTPException(400,"Email and password of at least 8 characters are required")
     with db() as conn, conn.transaction():
         conn.execute("SELECT pg_advisory_xact_lock(471005)")
         existing=conn.execute("SELECT 1 FROM staff_users WHERE password_hash IS NOT NULL LIMIT 1").fetchone()
@@ -2800,13 +2894,24 @@ def bootstrap_owner(payload: dict):
 def staff_sign_in(payload: dict, request: Request):
     email=str(payload.get("email","")).strip().lower(); password=str(payload.get("password",""))
     if not email or not password: raise HTTPException(400,"Email and password are required")
-    if not DATABASE_URL: return {"staff":{"id":"demo-owner","name":"Demo Owner","email":email,"role":"owner","active":True},"token":"demo-token"}
+    if len(email)>254 or len(password)>1024: raise HTTPException(400,"Invalid credential length")
+    keys = rate_keys(email, get_request_ip(request))
+    if not DATABASE_URL:
+        login_limiter.reserve(keys)
+        return {"staff":{"id":"demo-owner","name":"Demo Owner","email":email,"role":"owner","active":True},"token":"demo-token"}
     with db() as conn:
-        row=conn.execute("SELECT * FROM staff_users WHERE email=%s AND active=TRUE",(email,)).fetchone()
-        if not row or not row.get("password_hash") or hash_password(password,row["password_salt"]) != row["password_hash"]:
-            raise HTTPException(401,"Invalid email or password")
-        token=secrets.token_urlsafe(32)
-        conn.execute("INSERT INTO staff_sessions (token,staff_id,active_brand_id,active_store_id) VALUES (%s,%s,%s,%s)",(token,row["id"],row.get("business_id") or "fabclean",row.get("location_id") or "main"))
+        reserve_login(conn, keys)
+        with conn.transaction():
+            row=conn.execute("SELECT * FROM staff_users WHERE email=%s AND active=TRUE FOR UPDATE",(email,)).fetchone()
+            if not row or not row.get("password_hash"):
+                hash_password(password, "unrecognized-account")
+                raise HTTPException(401,"Invalid email or password")
+            if not verify_password(password,row["password_salt"],row["password_hash"]):
+                raise HTTPException(401,"Invalid email or password")
+            if not row["password_hash"].startswith("pbkdf2_sha256$"):
+                conn.execute("UPDATE staff_users SET password_hash=%s WHERE id=%s AND password_hash=%s", (hash_password(password,row["password_salt"]),row["id"],row["password_hash"]))
+            token=secrets.token_urlsafe(32)
+            conn.execute("INSERT INTO staff_sessions (token,staff_id,active_brand_id,active_store_id) VALUES (%s,%s,%s,%s)",(token,row["id"],row.get("business_id") or "fabclean",row.get("location_id") or "main"))
     staff=dict(row); staff.pop("password_hash",None); staff.pop("password_salt",None); staff["assignments"]=get_user_assignments(staff["id"])
     record_login_audit(staff, request)
     return {"staff":staff,"token":token,"permissions":sorted(effective_permissions(staff))}
@@ -2918,6 +3023,7 @@ def next_subscription_date(current_date: str, frequency: str):
     return (base+timedelta(days=days)).isoformat()
 
 @app.post("/api/subscriptions/{subscription_id}/generate-order")
+@store_creation_transaction
 def generate_subscription_order(subscription_id: str, x_session_token: str | None = Header(default=None)):
     staff=require_permission("orders",x_session_token)
     require_capability("subscriptions_enabled", "Subscriptions")
