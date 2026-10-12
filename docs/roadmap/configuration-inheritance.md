@@ -1,7 +1,7 @@
 # Brand-to-store configuration inheritance
 
-Status: VALIDATED — awaiting review; not merged or deployed.
-Priority: P2 — current sequential roadmap item.
+Status: ACCEPTED — merged at `7b193db`; both Render services live; public smoke checks passed.
+Priority: P2 — completed sequential roadmap item.
 PR: https://github.com/mahendraek/FabClean-SaaS/pull/8
 Implementation branch: `codex/pr-8-configuration-inheritance`, based on accepted main `be72979`.
 Implemented: 12 October 2026.
@@ -17,4 +17,4 @@ See [design, migration, APIs and validation](../PR8_IMPLEMENTATION.md).
 
 100 backend tests without skips, 26 frontend tests, clean TypeScript, 29-route web export, four desktop/mobile-web browser suites and local load gate pass. The three new tables use forced RLS; legacy operational/custody policies remain intact. Native-device and authenticated production acceptance remain unperformed; hosted GitHub CI/review flags cannot be verified because API access is Forbidden.
 
-Only mahendraek/FabClean-SaaS changes. Production remains on PR #7. PR #9–#12 remain planned. This development authorization does not authorize merge/deployment of PR #8; explicit approval is required.
+Only mahendraek/FabClean-SaaS changes. Production now runs PR #8 at `7b193db`. PR #9–#12 remain planned. The user explicitly authorized this merge/deployment; see [deployment evidence](../DEPLOYMENT_STATUS.md). PR #9 is next.

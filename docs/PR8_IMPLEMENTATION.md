@@ -1,6 +1,6 @@
 # PR #8 — Brand defaults and store overrides
 
-Implemented: 12 October 2026. Branch: `codex/pr-8-configuration-inheritance`, based on accepted main `be72979`; current production application remains `43f3cbf`. Awaiting review, not merged or deployed.
+Implemented: 12 October 2026. Branch: `codex/pr-8-configuration-inheritance`, based on accepted main `be72979`; prior production application was `43f3cbf`. Accepted and merged at `7b193db`; both Render services are live and public smoke checks passed.
 
 ## Delivered behavior
 
@@ -37,8 +37,12 @@ On 409, refresh configuration and reapply the intended edit. Store switching rem
 
 26 frontend unit tests pass, TypeScript has zero diagnostics and Expo exports 29 routes. All four desktop/mobile-web browser suites pass: context, custody, platform onboarding, and real-local-API configuration creation/override/propagation/reset/cancel/disable/input/permission/isolation. Mobile layout was visually inspected. The common `scripts/validate.sh` gate includes private disposable configuration fixtures and the new browser suite; [local load evidence](performance/pr8-load.json) has zero errors. No production fixtures, authentication, messages or service changes were used.
 
-Native iOS/Android devices, actual OS sharing and authenticated production inheritance remain unperformed. GitHub API access remains Forbidden, so hosted CI/review/open/closed metadata is unverified. Render deployment remains unchanged and automatic deployment remains off. Explicit approval is required before merging/deploying this PR. PR #9–#12 remain queued; their development has not started.
+Native iOS/Android devices, actual OS sharing and authenticated production inheritance remain unperformed. GitHub API access remains Forbidden, so hosted CI/review/open/closed metadata is unverified. Following explicit approval, both Render services are live at `7b193db`; automatic deployment remains off. PR #9–#12 remain queued; their development has not started.
 
 ## Publication evidence
 
 Initial implementation `744947a`; planning ancestry joined at `4590250` without changing the validated tree; accepted development fix `7a3696d` preserves legacy service fields. The complete gate passed on the final application tree: 100 backend tests, 26 frontend tests, TypeScript, export, load and all browser suites. On 12 October 2026, authenticated Git independently verified `codex/pr-8-configuration-inheritance`, `roadmap/configuration-inheritance` and `refs/pull/8/head` at `7a3696d`. Main remained `be72979`; Render remains on PR #7. A documentation-only follow-up records this evidence. GitHub rejected title/body editing with GraphQL Forbidden, so hosted review/CI/open/closed state remains unverified. No merge into main or deployment was performed.
+
+## Accepted release
+
+The user explicitly authorized merge/deployment. PR #8 was merged at `7b193db` without changing the validated tree. Both Render services are live at that commit; API health, authorization, configuration CORS, published schema and fresh web-bundle checks passed. See [deployment evidence](DEPLOYMENT_STATUS.md) for deployment IDs and India-time completion timestamps. Earlier no-merge/no-deployment statements document the development checkpoint. Native devices, authenticated production inheritance and hosted GitHub metadata remain unverified. PR #9 has not started.

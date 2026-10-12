@@ -2,13 +2,30 @@
 
 Updated: 12 October 2026.
 
-## Current release — PR #7
+## Current release — PR #8
+
+The user explicitly authorized merge and deployment. PR #8 was merged into main at `7b193dbb7f3c148acf2c556947f7528759d1fe23`, independently verified through authenticated Git. Implementation `744947a`, planning merge `4590250`, validated compatibility fix `7a3696d` and published head `7ed2213` are retained in the merge ancestry. The merged tree exactly matches the locally validated branch. GitHub hosted CI/review/open/closed metadata remains unverified because API access is Forbidden; this release used the explicitly approved local-validation/manual-deployment fallback.
+
+Validation: 100 backend tests without skips on disposable PostgreSQL with a non-bypass owner, 26 frontend tests, clean TypeScript, 29-route Expo export, all four desktop/mobile context/custody/platform/configuration browser suites, and a zero-error local load gate. See [implementation and acceptance notes](PR8_IMPLEMENTATION.md).
+
+Authenticated Render API confirms both services **live** at `7b193dbb7f3c148acf2c556947f7528759d1fe23`. Automatic deployment remains off; service configuration and environment bindings were preserved.
+
+| Service | Public URL | Service ID | Live deployment | Finished (India time) |
+| --- | --- | --- | --- | --- |
+| API | https://fabclean-saas-api.onrender.com | `srv-db3nmqij9qps738d2qkg` | `dep-db6b3j2d0e5s73a31veg` | 2026-10-12 15:40:28 IST |
+| Web | https://fabclean-saas-web.onrender.com | `srv-db3nmv60tbcc73895n1g` | `dep-db6b3j5ckfvc73cqjh2g` | 2026-10-12 15:41:37 IST |
+
+Public verification passed: API health reports PostgreSQL, request IDs and approved CORS; unauthenticated configuration, orders, handoffs and platform plans/health/audit return 401 with no-store; configuration PUT preflight accepts the web origin and rejects an untrusted origin; published OpenAPI contains configuration read/write and earlier platform routes; the homepage and configuration route return 200, and freshly fetched JavaScript contains the PR #8 inheritance editor, source labels and configuration endpoint code. Startup completed successfully; production migration rows and RLS were not directly inspected.
+
+No production fixtures, sign-in attempts, configuration/operational writes or load traffic were used for smoke checks. Authenticated production inheritance and native-device acceptance remain unperformed. This deployment record is a documentation-only follow-up [skip render]; the live application commit remains `7b193db`. PR #9 is next and has not started.
+
+## Previous release — PR #7 (historical evidence)
 
 The user explicitly authorized merge and deployment. PR #7 was merged into main at `43f3cbfd6db1183525bf1207700bfa9890fe83fa`; authenticated Git independently verified the remote main ref. Implementation `065d1e0`, planning merge `e1a8977` and published head `59b4fc9` are retained in the merge ancestry. The merged tree exactly matches the locally validated branch. GitHub API review/CI/open/closed metadata remains unverified because access is Forbidden; this is the approved manual-release fallback.
 
 Validation: 80 backend tests without skips on disposable non-bypass PostgreSQL, 23 frontend tests, zero TypeScript diagnostics, 28-route Expo export, desktop/mobile context, custody and onboarding/store-recovery browser flows, and a local load gate with zero errors. See [implementation and acceptance notes](PR7_IMPLEMENTATION.md).
 
-Authenticated Render API confirms both deployments **live** at `43f3cbfd6db1183525bf1207700bfa9890fe83fa`. Automatic deployment remains off; service roots, commands and environment configuration were preserved.
+At the PR #7 release, authenticated Render API confirmed both deployments **live** at `43f3cbfd6db1183525bf1207700bfa9890fe83fa`. Automatic deployment remains off; service roots, commands and environment configuration were preserved.
 
 | Service | Public URL | Service ID | Live deployment | Finished (India time) |
 | --- | --- | --- | --- | --- |
@@ -17,7 +34,7 @@ Authenticated Render API confirms both deployments **live** at `43f3cbfd6db11835
 
 Public verification passed: API health reports PostgreSQL with request IDs and the approved CORS origin; unauthenticated orders, handoffs, platform plans/health/audit return 401 with no-store; invitation preflight accepts the web origin and rejects an untrusted origin; published OpenAPI contains the new platform/invitation endpoints; the homepage and invitation route return 200 and their freshly fetched JavaScript contains PR #7 acceptance and platform/store-recovery code. Startup completed successfully; production migration rows and RLS were not directly inspected.
 
-No production test identities, invitations, authentication attempts, operational writes or load traffic were used. Authenticated production onboarding, actual sharing/delivery and native-device acceptance remain unperformed. This deployment record is a documentation-only follow-up [skip render]; the running application commit remains `43f3cbf`. PR #8 is next and has not started.
+No production test identities, invitations, authentication attempts, operational writes or load traffic were used. Authenticated production onboarding, actual sharing/delivery and native-device acceptance remain unperformed. This deployment record is a documentation-only follow-up [skip render]; the running application commit remains `43f3cbf`. At that release, PR #8 had not started; its current release evidence appears above.
 
 ## Previous release — PR #6 (historical evidence)
 
