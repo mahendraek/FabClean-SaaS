@@ -29,6 +29,8 @@ The implementation adds forced PostgreSQL row-level security on 21 operational t
 
 **Next after PR #9 acceptance:** PR #10 — OpenStreetMap delivery coverage. No future item has started.
 
+**PR #9 revalidation:** authenticated Git verified both development branches and PR #9 head at `7d610ae` (including the CI browser-cache fix), while main remains `04a6d8e`. A fresh disposable PostgreSQL 17 run passed the full gate: 119 backend tests without skips, 26 frontend tests, TypeScript, 30-route export, five desktop/mobile browser suites and zero-error load validation. Development is complete and awaiting review; hosted CI/review metadata remains Forbidden. See [fresh verification](PR9_IMPLEMENTATION.md#fresh-checkout-verification).
+
 ## Sequential PR queue
 
 | Order | PR | Priority | Scope | Development status | Depends on |

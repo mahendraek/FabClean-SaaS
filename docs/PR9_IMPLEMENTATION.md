@@ -48,4 +48,12 @@ Native devices, actual printer output and authenticated production tax execution
 
 ## Publication evidence
 
+### Fresh checkout verification
+
+Revalidated on 12 October 2026 at published head `7d610ae34f427c82a8624d76125a9978c359966c`, including the CI browser-cache correction. The onboarding checkout was still on PR #8 main; authenticated Git confirmed that the existing PR #9 implementation was already published. Both `codex/pr-9-location-taxes`, `roadmap/location-taxes` and `refs/pull/9/head` resolved to `7d610ae`; main remained `04a6d8e`. The stale main tracker did not reflect the completed development branch.
+
+The common `scripts/validate.sh` passed on a fresh UTF-8 disposable PostgreSQL 17 database owned by a NOSUPERUSER/NOBYPASSRLS role: 119 backend tests without skips, 26 frontend tests, TypeScript, 30-route web export and all five desktop/mobile browser suites. The load gate recorded zero errors and 154.46 requests/second. The mobile tax editor screenshot was inspected. The prepared environment's standard `fabclean_test` database now contains this implementation's schema. No competing tax implementation was published.
+
+GitHub API access again returned Forbidden, so hosted CI and review state remain unverified. Local browser validation used system Chromium. No merge into main or deployment was performed.
+
 Implementation `7b95598`; planning ancestry retained at `33eb31c` without changing the implementation tree. On 12 October 2026, authenticated Git independently verified `codex/pr-9-location-taxes`, `roadmap/location-taxes` and `refs/pull/9/head` at `33eb31c`. Main remained `04a6d8e`; the running Render application remains PR #8 (`7b193db`). A documentation-only follow-up records publication. GitHub rejected title/body editing with GraphQL Forbidden; the review scope remains in this document and the roadmap. Git refs establish publication, not hosted CI/review/open/closed state. No merge into main or deployment was performed.

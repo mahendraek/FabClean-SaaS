@@ -6,6 +6,7 @@ PR: https://github.com/mahendraek/FabClean-SaaS/pull/9
 Implementation branch: `codex/pr-9-location-taxes`, based on accepted main `04a6d8e`.
 Implemented: 12 October 2026.
 Publication: implementation `7b95598`, planning merge `33eb31c`; both branches and PR #9 head verified at `33eb31c`. A documentation-only follow-up records publication; GitHub title/body editing returned Forbidden.
+Fresh verification: both branches and PR #9 head at `7d610ae` on 12 October 2026; the full local gate passed again on a fresh PostgreSQL 17 database. Includes the CI browser-cache correction. Main remains `04a6d8e`; no merge or deployment was performed.
 
 ## Delivered scope
 
