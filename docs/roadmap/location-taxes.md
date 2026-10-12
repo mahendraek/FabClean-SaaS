@@ -1,6 +1,6 @@
 # Location-aware taxes
 
-Status: VALIDATED — awaiting review; not merged or deployed.
+Status: ACCEPTED AND MERGED at `9e68ce3` — deployment pending Render credential/network access.
 Priority: P2 — current sequential roadmap item.
 PR: https://github.com/mahendraek/FabClean-SaaS/pull/9
 Implementation branch: `codex/pr-9-location-taxes`, based on accepted main `04a6d8e`.

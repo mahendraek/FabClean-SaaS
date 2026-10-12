@@ -2,7 +2,15 @@
 
 Updated: 12 October 2026.
 
-## Current release — PR #8
+## PR #9 — merged; deployment pending
+
+On 12 October 2026, the user explicitly authorized merge and deployment. PR #9 was merged into main at `9e68ce3d43eea0ea12a1fc9b1d2d36bd6a70a28f`; authenticated Git independently verified remote main. The merged tree exactly matches validated head `fa45909`: 119 backend tests without skips, 26 frontend tests, clean TypeScript, 30-route export, five desktop/mobile browser suites and zero-error load validation. See [implementation evidence](PR9_IMPLEMENTATION.md).
+
+Deployment is blocked in the current environment: no Render credential binding is present, and HTTPS CONNECT requests to `api.render.com` and the API public URL return proxy 403. No deployment was triggered. Current live service state is unverified; PR #8 below is the last confirmed deployment. GitHub API hosted review/merge/CI metadata also remains Forbidden; the main Git merge is independently verified.
+
+The saved environment draft adds `api.render.com`, `fabclean-saas-api.onrender.com`, and `fabclean-saas-web.onrender.com` and declares `RENDER_API_KEY` for the Render API. Enter the credential securely in environment settings, save the changes and publish the environment, then retry authenticated Render access. Deploy both existing services to `9e68ce3` and verify their exact live commit, API health/authentication/CORS, OpenAPI tax routes and the fresh web tax screen/bundle. Do not use production fixtures or operational writes for smoke checks.
+
+## Last confirmed live release — PR #8
 
 The user explicitly authorized merge and deployment. PR #8 was merged into main at `7b193dbb7f3c148acf2c556947f7528759d1fe23`, independently verified through authenticated Git. Implementation `744947a`, planning merge `4590250`, validated compatibility fix `7a3696d` and published head `7ed2213` are retained in the merge ancestry. The merged tree exactly matches the locally validated branch. GitHub hosted CI/review/open/closed metadata remains unverified because API access is Forbidden; this release used the explicitly approved local-validation/manual-deployment fallback.
 

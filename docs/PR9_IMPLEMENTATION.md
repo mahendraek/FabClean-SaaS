@@ -1,6 +1,6 @@
 # PR #9 — Location-aware taxes
 
-Implemented: 12 October 2026. Branch `codex/pr-9-location-taxes`, based on accepted main `04a6d8e`; live application remains `7b193db`. Awaiting review; not merged or deployed.
+Implemented: 12 October 2026. Accepted with explicit user authorization and merged into main at `9e68ce3d43eea0ea12a1fc9b1d2d36bd6a70a28f`. Authenticated Git verified the remote main SHA, and the merged tree exactly matches validated head `fa45909`. Deployment is pending: this cloud environment has no Render credential binding and its egress proxy denies Render API/public-service requests. Required access was saved for environment-settings review. The last confirmed live release is PR #8; current live state could not be rechecked. Earlier review/publication notes below are historical evidence.
 
 ## Calculation and location policy
 
