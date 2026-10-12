@@ -1,7 +1,7 @@
 # Platform administration and tenant onboarding
 
-Status: VALIDATED — awaiting review; not merged or deployed.
-Priority: P1 — current sequential roadmap item.
+Status: ACCEPTED — merged at `43f3cbf`; both Render services live and public smoke checks passed.
+Priority: P1 — completed sequential roadmap item.
 PR: https://github.com/mahendraek/FabClean-SaaS/pull/7
 Implementation branch: `codex/pr-7-platform-onboarding`, based on accepted main `76b1bea`.
 Implemented: 12 October 2026.
@@ -21,4 +21,4 @@ Native devices, actual sharing/email delivery and production onboarding remain u
 
 ## Boundaries
 
-Only mahendraek/FabClean-SaaS is changed. New global tables contain platform/authentication control state, not shared operational customer records. Unknown historical rows are retained. PR #8–#12 remain planned. This implementation awaits review; earlier PR #6 merge/deploy approval does not authorize PR #7 deployment.
+Only mahendraek/FabClean-SaaS is changed. New global tables contain platform/authentication control state, not shared operational customer records. Unknown historical rows are retained. PR #8–#12 remain planned. The user explicitly authorized this PR #7 merge/deployment. See [deployment evidence](../DEPLOYMENT_STATUS.md). PR #8 remains next.

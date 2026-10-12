@@ -1,6 +1,6 @@
 # PR #7 — Platform administration and tenant onboarding
 
-Prepared/implemented: 12 October 2026. Branch: `codex/pr-7-platform-onboarding`, based on accepted main `76b1bea` (live application `dd031a7`). Status: validated, awaiting review. No merge, deployment, production configuration changes or real invitation delivery were performed.
+Prepared/implemented: 12 October 2026. Branch: `codex/pr-7-platform-onboarding`, based on accepted main `76b1bea` (prior live application `dd031a7`). Status: accepted and merged into main at `43f3cbf`; both Render services are live and public smoke checks passed. See [deployment evidence](DEPLOYMENT_STATUS.md). Service configuration was preserved; real invitation delivery remains unperformed.
 
 ## Delivered flows
 
@@ -66,3 +66,7 @@ Before deployment, review plan defaults, run the common validation gate, verify 
 ## Publication evidence
 
 Implementation commit `065d1e0`; planning ancestry joined at `e1a8977` without changing the validated implementation tree. On 12 October 2026, authenticated Git independently verified both `codex/pr-7-platform-onboarding` and `roadmap/platform-management`, plus `refs/pull/7/head`, at `e1a8977`. Main remained `76b1bea`. A documentation-only follow-up records this evidence. GitHub rejected the PR title/body update with GraphQL Forbidden; review scope is retained here and in the roadmap document. Git refs establish publication, not hosted review/CI or open/merged state. No merge into main or deployment was performed.
+
+## Accepted release
+
+After explicit user approval, PR #7 was merged into main at `43f3cbf` without changing its validated tree. Both Render services are live at that commit, and public health/authorization/CORS/schema/web-bundle checks passed. See [deployment evidence](DEPLOYMENT_STATUS.md) for deployment IDs and India-time completion timestamps. Earlier awaiting-review/no-deployment statements describe the development checkpoint. Hosted GitHub CI/review metadata, native devices and actual invitation delivery remain unverified. PR #8 has not started.
