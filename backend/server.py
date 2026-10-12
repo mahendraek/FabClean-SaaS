@@ -1,3 +1,4 @@
+import taxes
 import configuration
 import base64
 import json
@@ -113,6 +114,7 @@ def validate_order_references(payload: dict, x_session_token):
         if not exists: raise HTTPException(404, "Scheduling record not found in the active store")
 DEFAULT_SETTINGS = {
     "business_name": "FabClean Demo Laundry",
+    "delivery_fee_taxable": False,
     "pickup_enabled": False,
     "delivery_enabled": False,
     "rewards_enabled": True,
@@ -236,6 +238,7 @@ def init_db():
             install_store_operations(conn)
             install_platform(conn)
             configuration.install(conn)
+            taxes.install(conn)
             return
         conn.execute("""
             CREATE TABLE IF NOT EXISTS app_settings (
@@ -736,6 +739,7 @@ def init_db():
             install_store_operations(conn)
             install_platform(conn)
             configuration.install(conn)
+            taxes.install(conn)
 
 @app.on_event("startup")
 def startup():
@@ -1810,6 +1814,7 @@ def store_creation_transaction(function):
                 key = json.dumps(["recurring", brand, store, subscription_id])
                 if not conn.execute("SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0)) AS locked", (key,)).fetchone()["locked"]:
                     raise HTTPException(409, "Recurring order generation is already in progress")
+            lock_brand_operations(conn, brand)
             # Store-local lock protects number allocation and customer/order writes.
             key = json.dumps(["order-create", brand, store])
             conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (key,))
@@ -1865,7 +1870,7 @@ def create_order(payload: OrderCreate, x_session_token: str | None = Header(defa
     if isinstance(customer, dict):
         customer = Customer(**customer)
 
-    subtotal = round(sum(item.unit_price * item.quantity for item in payload.items), 2)
+    subtotal = taxes.calculate(sys.modules[__name__],[i.model_dump() for i in payload.items])["subtotal"]
     applied_offer = None
     discount = float(payload.discount or 0)
     if payload.promo_code and not capability_enabled("offers_enabled", True):
@@ -1905,7 +1910,8 @@ def create_order(payload: OrderCreate, x_session_token: str | None = Header(defa
                 raise HTTPException(400, "Selected pickup time slot is unavailable")
             if needs_delivery and (not delivery_slot or not delivery_slot["delivery_enabled"]):
                 raise HTTPException(400, "Selected delivery time slot is unavailable")
-    total = round(subtotal - discount + payload.tax + delivery_fee, 2)
+    tax_result=taxes.calculate(sys.modules[__name__],[i.model_dump() for i in payload.items],discount,delivery_fee)
+    total=tax_result["total"]
     finalized_items = []
     for index, item in enumerate(payload.items, 1):
         data = item.model_dump()
@@ -1921,7 +1927,8 @@ def create_order(payload: OrderCreate, x_session_token: str | None = Header(defa
         items=finalized_items,
         subtotal=subtotal,
         discount=discount,
-        tax=payload.tax,
+        tax=tax_result["tax"],
+        tax_snapshot=tax_result["tax_snapshot"],
         total=total,
         payment_method=payload.payment_method,
         payment_status=payload.payment_status,
@@ -2045,6 +2052,7 @@ def order_transaction(function):
     def guarded(order_id, *args, **kwargs):
         if not DATABASE_URL: return function(order_id, *args, **kwargs)
         with db() as conn, conn.transaction():
+            lock_brand_operations(conn, current_scope.get()[0])
             row = conn.execute("SELECT id FROM orders WHERE id=%s FOR UPDATE", (order_id,)).fetchone()
             if not row: raise HTTPException(404, "Order not found")
             marker = transaction_connection.set(conn)
@@ -2063,6 +2071,7 @@ def create_order_payment(order_id: str, payload: dict, x_session_token: str | No
     try: amount=float(payload.get("amount",0) or 0)
     except (ValueError, TypeError): raise HTTPException(400,"Payment amount must be a finite number")
     if not math.isfinite(amount): raise HTTPException(400,"Payment amount must be a finite number")
+    amount=float(taxes.money(abs(amount)))*(1 if amount>=0 else -1)
     kind=str(payload.get("transaction_type","payment")).lower()
     if kind not in ("payment","refund","adjustment"):
         raise HTTPException(400,"Invalid transaction type")
@@ -2075,16 +2084,20 @@ def create_order_payment(order_id: str, payload: dict, x_session_token: str | No
     method=str(payload.get("payment_method","cash")).lower()
     if method not in ("cash","card","other"):
         raise HTTPException(400,"Invalid payment method")
+    tax_amount=0;tax_breakdown=[]
+    if kind=='refund':
+        rows,_,_=payment_totals(order_id,order_total)
+        tax_amount,tax_breakdown=taxes.refund(data,rows,abs(amount))
     customer=data.get("customer") or {}
     pid=str(uuid.uuid4())
     receipt="FCR-"+datetime.now(timezone.utc).strftime("%Y%m%d")+"-"+uuid.uuid4().hex[:6].upper()
-    item={"id":pid,"receipt_number":receipt,"order_id":order_id,"customer_id":customer.get("id"),"transaction_type":kind,"payment_method":method,"amount":round(amount,2),"reference_number":str(payload.get("reference_number","")),"notes":str(payload.get("notes","")),"staff_id":staff.get("id"),"staff_name":staff.get("name","")}
+    item={"id":pid,"receipt_number":receipt,"order_id":order_id,"customer_id":customer.get("id"),"transaction_type":kind,"payment_method":method,"amount":round(amount,2),"reference_number":str(payload.get("reference_number","")),"notes":str(payload.get("notes","")),"staff_id":staff.get("id"),"staff_name":staff.get("name",""),"tax_amount":tax_amount,"tax_breakdown":tax_breakdown}
     if not DATABASE_URL:
         item["created_at"]=datetime.now(timezone.utc).isoformat()
         memory_payments.append(item)
     else:
         with db() as conn:
-            row=conn.execute("INSERT INTO payment_transactions (id,receipt_number,order_id,customer_id,transaction_type,payment_method,amount,reference_number,notes,staff_id,staff_name) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *",(pid,receipt,order_id,customer.get("id"),kind,method,amount,item["reference_number"],item["notes"],staff.get("id"),staff.get("name",""))).fetchone()
+            row=conn.execute("INSERT INTO payment_transactions (id,receipt_number,order_id,customer_id,transaction_type,payment_method,amount,reference_number,notes,staff_id,staff_name,tax_amount,tax_breakdown) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb) RETURNING *",(pid,receipt,order_id,customer.get("id"),kind,method,amount,item["reference_number"],item["notes"],staff.get("id"),staff.get("name",""),tax_amount,json.dumps(tax_breakdown))).fetchone()
             item=dict(row)
     status=sync_order_payment_status(order_id,order_total)
     record_order_event(order_id,"payment_recorded",None,amount,f"{kind.title()} via {method}",{"receipt_number":receipt,"staff_id":staff.get("id"),"staff_name":staff.get("name","")})
@@ -2105,7 +2118,7 @@ def update_order(order_id: str, payload: dict, x_session_token: str | None = Hea
     staff=require_permission("orders",x_session_token)
     get_order(order_id,x_session_token)
     allowed = {
-        "items", "notes", "discount", "tax", "payment_method", "payment_status",
+        "items", "notes", "discount", "payment_method", "payment_status",
         "due_at", "pricing_status", "quick_dropoff", "bag_count", "status",
         "service_area_id", "service_area_name", "scheduled_slot_id", "scheduled_slot_label",
         "pickup_date", "pickup_slot_id", "pickup_slot_label", "delivery_date", "delivery_slot_id", "delivery_slot_label",
@@ -2120,6 +2133,10 @@ def update_order(order_id: str, payload: dict, x_session_token: str | None = Hea
 
     def apply(order):
         before = dict(order)
+        monetary=any(key in updates and updates[key]!=order.get(key) for key in ('items','discount','delivery_fee'))
+        if monetary:
+            rows,_,_=payment_totals(order_id,float(order.get('total',0)))
+            if any(r.get('transaction_type')=='refund' for r in rows):raise HTTPException(409,'Pricing cannot change after a refund')
         for key, value in updates.items():
             order[key] = value
         items = order.get("items", [])
@@ -2128,8 +2145,8 @@ def update_order(order_id: str, payload: dict, x_session_token: str | None = Hea
             if not item.get("barcode_value"):
                 item["barcode_value"] = base_barcode + "-" + str(index).zfill(3)
         order["items"] = items
-        order["subtotal"] = round(sum(float(i.get("unit_price", 0)) * float(i.get("quantity", 0)) for i in items), 2)
-        order["total"] = round(order["subtotal"] - float(order.get("discount", 0)) + float(order.get("tax", 0)) + float(order.get("delivery_fee", 0)), 2)
+        if monetary:
+            order.update(taxes.calculate(sys.modules[__name__],items,order.get('discount',0),order.get('delivery_fee',0),order.get('tax_snapshot')))
         return before, order
 
     if not DATABASE_URL:
@@ -3487,3 +3504,5 @@ def dashboard(x_session_token: str | None = Header(default=None)):
 register_platform_routes(app, sys.modules[__name__])
 
 configuration.register(app, sys.modules[__name__])
+
+taxes.register(app, sys.modules[__name__])

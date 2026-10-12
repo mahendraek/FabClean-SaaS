@@ -123,6 +123,7 @@ class Order(BaseModel):
     subtotal: float
     discount: float = 0
     tax: float = 0
+    tax_snapshot: Optional[dict] = None
     total: float
     payment_method: str = "cash"
     payment_status: str = "unpaid"

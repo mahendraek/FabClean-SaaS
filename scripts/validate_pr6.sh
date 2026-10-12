@@ -26,6 +26,7 @@ PY
 fixture_path=$(mktemp /tmp/fabclean-browser-XXXXXX.json)
 platform_fixture_path=$(mktemp /tmp/fabclean-platform-XXXXXX.json)
 configuration_fixture_path=$(mktemp /tmp/fabclean-configuration-XXXXXX.json)
+tax_fixture_path=$(mktemp /tmp/fabclean-tax-XXXXXX.json)
 "$python_bin" - <<'PY'
 import socket
 with socket.socket() as listener:
@@ -35,9 +36,10 @@ PY
 FABCLEAN_TEST_DATABASE_URL="$FABCLEAN_TEST_DATABASE_URL" "$python_bin" -m tests.create_handoff_browser_fixture "$fixture_path"
 FABCLEAN_TEST_DATABASE_URL="$FABCLEAN_TEST_DATABASE_URL" "$python_bin" -m tests.create_platform_browser_fixture "$platform_fixture_path"
 FABCLEAN_TEST_DATABASE_URL="$FABCLEAN_TEST_DATABASE_URL" "$python_bin" -m tests.create_configuration_browser_fixture "$configuration_fixture_path"
+FABCLEAN_TEST_DATABASE_URL="$FABCLEAN_TEST_DATABASE_URL" "$python_bin" -m tests.create_tax_browser_fixture "$tax_fixture_path"
 DATABASE_URL="$FABCLEAN_TEST_DATABASE_URL" "$python_bin" -m uvicorn server:app --host 127.0.0.1 --port 8005 --no-access-log > /tmp/pr6-validation-api.log 2>&1 &
 api_pid=$!
-trap 'kill "$api_pid" 2>/dev/null || true; rm -f "$fixture_path" "$platform_fixture_path" "$configuration_fixture_path"' EXIT
+trap 'kill "$api_pid" 2>/dev/null || true; rm -f "$fixture_path" "$platform_fixture_path" "$configuration_fixture_path" "$tax_fixture_path"' EXIT
 "$python_bin" - <<'PY'
 import time,urllib.request
 for attempt in range(30):
@@ -67,3 +69,5 @@ HANDOFF_TEST_FIXTURES="$fixture_path" npm run test:handoffs:browser
 PLATFORM_TEST_FIXTURES="$platform_fixture_path" npm run test:platform:browser
 
 CONFIGURATION_TEST_FIXTURES="$configuration_fixture_path" npm run test:configuration:browser
+
+TAX_TEST_FIXTURES="$tax_fixture_path" npm run test:taxes:browser
