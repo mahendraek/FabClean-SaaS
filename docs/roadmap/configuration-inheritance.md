@@ -5,6 +5,7 @@ Priority: P2 — current sequential roadmap item.
 PR: https://github.com/mahendraek/FabClean-SaaS/pull/8
 Implementation branch: `codex/pr-8-configuration-inheritance`, based on accepted main `be72979`.
 Implemented: 12 October 2026.
+Publication: implementation `744947a`, planning merge `4590250`, validated fix `7a3696d`; both branches and PR #8 head verified at `7a3696d`. A documentation-only follow-up records evidence. GitHub title/body editing returned Forbidden.
 
 ## Delivered scope
 
