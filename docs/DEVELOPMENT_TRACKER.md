@@ -25,6 +25,8 @@ The implementation adds forced PostgreSQL row-level security on 21 operational t
 
 **Current: PR #9 — location-aware taxes:** implemented on `codex/pr-9-location-taxes`, based on accepted main `04a6d8e`; validated and awaiting review. Implementation `7b95598`, published planning merge `33eb31c`; both branch refs and PR #9 head independently verified through Git. GitHub title/body editing returned Forbidden. Dated state/local service-store rules, authoritative estimates/orders, saved tax/rate/location breakdowns, exemption/fee policy, capped proportional refund credits, unclassified legacy refund reporting and responsive screens/receipts are implemented. Validation: 119 backend tests without skips, 26 frontend tests, clean TypeScript, 30-route export, five desktop/mobile suites and zero-error local load gate. Not merged or deployed. See [implementation notes](PR9_IMPLEMENTATION.md).
 
+**CI correction:** public GitHub run metadata confirms earlier hosted failures. The user-supplied log identifies a Playwright install/validation cache mismatch; PR #9 now sets one shared browser directory and checks startup before the gate. See [cause and verification](CI_VALIDATION_FIX.md) and the linked exact-head workflow runs. No application or deployment changes are included.
+
 **Next after PR #9 acceptance:** PR #10 — OpenStreetMap delivery coverage. No future item has started.
 
 ## Sequential PR queue
