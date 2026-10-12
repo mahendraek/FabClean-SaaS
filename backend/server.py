@@ -1,3 +1,4 @@
+import configuration
 import base64
 import json
 import os
@@ -234,6 +235,7 @@ def init_db():
         if migration_installed(conn):
             install_store_operations(conn)
             install_platform(conn)
+            configuration.install(conn)
             return
         conn.execute("""
             CREATE TABLE IF NOT EXISTS app_settings (
@@ -733,17 +735,14 @@ def init_db():
         if migration_installed(conn):
             install_store_operations(conn)
             install_platform(conn)
+            configuration.install(conn)
 
 @app.on_event("startup")
 def startup():
     init_db()
 
 def get_settings_value():
-    if not DATABASE_URL:
-        return dict(memory_settings)
-    with db() as conn:
-        row = conn.execute("SELECT payload FROM app_settings WHERE id='business'").fetchone()
-        return row["payload"] if row else dict(memory_settings)
+    return configuration.settings(sys.modules[__name__])[0]
 
 def feature_allowed(feature):
     policy = request_entitlements.get()
@@ -763,12 +762,12 @@ def require_capability(key: str, label: str):
 def get_service_values(include_inactive: bool = False):
     if not DATABASE_URL:
         values = [s.model_dump() for s in memory_services.values()]
-        return values if include_inactive else [s for s in values if s.get("active", True)]
+        return configuration.service_values(sys.modules[__name__],values,include_inactive)
     with db() as conn:
         if include_inactive:
             rows = conn.execute("SELECT payload, active FROM services ORDER BY id").fetchall()
         else:
-            rows = conn.execute("SELECT payload, active FROM services WHERE active=TRUE ORDER BY id").fetchall()
+            rows = conn.execute("SELECT payload, active FROM services ORDER BY id").fetchall()
         values = []
         for row in rows:
             payload = dict(row["payload"])
@@ -784,7 +783,7 @@ def get_service_values(include_inactive: bool = False):
                 payload["express_enabled"] = bool(payload.get("express_enabled", False))
                 payload["express_surcharge_percent"] = float(payload.get("express_surcharge_percent", 0) or 0)
             values.append(payload)
-        return values
+        return configuration.service_values(sys.modules[__name__],values,include_inactive)
 
 def get_order_values():
     if not DATABASE_URL:
@@ -861,14 +860,15 @@ def find_valid_offer(code: str, subtotal: float, customer_id: str | None):
     code = (code or "").strip().upper()
     if not code:
         return None, 0
-    if not DATABASE_URL:
-        offer = next((r for r in memory_catalogs["offers"].values() if str(r.get("code", "")).upper() == code and r.get("active", True)), None)
-    else:
-        with db() as conn:
-            offer = conn.execute(
-                "SELECT * FROM offers WHERE UPPER(code)=UPPER(%s) AND active=TRUE AND (starts_at IS NULL OR starts_at<=NOW()) AND (ends_at IS NULL OR ends_at>=NOW())",
-                (code,),
-            ).fetchone()
+    now=datetime.now(timezone.utc)
+    def available(row):
+        for key,lower in [('starts_at',True),('ends_at',False)]:
+            value=row.get(key)
+            if value:
+                date=value if isinstance(value,datetime) else datetime.fromisoformat(value.replace('Z','+00:00'))
+                if (lower and date>now) or (not lower and date<now):return False
+        return True
+    offer=next((r for r in configuration.offer_values(sys.modules[__name__]) if str(r.get('code') or '').upper()==code and available(r)),None)
     if not offer:
         return None, 0
     order_count = 0
@@ -1119,19 +1119,17 @@ def get_settings(x_session_token: str | None = Header(default=None)):
 @app.put("/api/settings")
 def update_settings(payload: dict, x_session_token: str | None = Header(default=None)):
     require_permission("admin",x_session_token)
-    current = get_settings_value()
-    current.update(payload)
     if not DATABASE_URL:
-        memory_settings.clear()
-        memory_settings.update(current)
-        return dict(memory_settings)
-    with db() as conn:
-        conn.execute(
-            "INSERT INTO app_settings (id, payload) VALUES ('business', %s::jsonb) "
-            "ON CONFLICT (business_id,location_id,id) DO UPDATE SET payload=EXCLUDED.payload",
-            (json.dumps(current),),
-        )
-    return current
+        return configuration.save_settings(sys.modules[__name__], payload)
+    with db() as conn, conn.transaction():
+        lock_brand_operations(conn, current_scope.get()[0])
+        marker=transaction_connection.set(conn)
+        try:
+            result=configuration.save_settings(sys.modules[__name__],payload)
+            row=configuration.load(sys.modules[__name__])
+            conn.execute('INSERT INTO store_configuration(business_id,location_id,payload,revision) VALUES (%s,%s,%s::jsonb,%s) ON CONFLICT(business_id,location_id) DO UPDATE SET revision=store_configuration.revision+1',(*current_scope.get(),json.dumps(row['payload']),row['revision']+1))
+            return result
+        finally:transaction_connection.reset(marker)
 
 @app.get("/api/services")
 def list_services(x_session_token: str | None = Header(default=None)):
@@ -1142,22 +1140,24 @@ def list_services(x_session_token: str | None = Header(default=None)):
 
 def get_category_values(include_inactive: bool = True):
     if not DATABASE_URL:
-        return [dict(r) for r in memory_catalogs["service_categories"].values() if include_inactive or r.get("active", True)]
-    with db() as conn:
-        if include_inactive:
-            rows = conn.execute("SELECT id, name, active, sort_order FROM service_categories ORDER BY sort_order, name").fetchall()
-        else:
-            rows = conn.execute("SELECT id, name, active, sort_order FROM service_categories WHERE active=TRUE ORDER BY sort_order, name").fetchall()
-    return [dict(row) for row in rows]
+        rows=[dict(r) for r in memory_catalogs["service_categories"].values()]
+    else:
+        with db() as conn:rows=[dict(r) for r in conn.execute("SELECT id,name,active,sort_order FROM service_categories ORDER BY sort_order,name").fetchall()]
+    names={r['name'] for r in rows}
+    for service in configuration.load(sys.modules[__name__],True)["payload"]["services"].values():
+        name=service.get('category')
+        if name and name not in names:
+            rows.append({'id':'inherited-'+hashlib.sha256(name.encode()).hexdigest()[:16],'name':name,'active':True,'sort_order':0});names.add(name)
+    return [r for r in rows if include_inactive or r.get('active',True)]
 
 @app.get("/api/admin/overview")
 def admin_overview(x_session_token: str | None = Header(default=None)):
     require_permission("admin",x_session_token)
     if not DATABASE_URL:
-        services=[s.model_dump(mode="json") for s in memory_services.values()]
+        services=get_service_values(include_inactive=True)
         categories=get_category_values(include_inactive=True)
         return {
-            "settings": dict(memory_settings),
+            "settings": get_settings_value(),
             "services": services,
             "categories": categories,
             "summary": {
@@ -1171,18 +1171,10 @@ def admin_overview(x_session_token: str | None = Header(default=None)):
         settings_row=conn.execute("SELECT payload FROM app_settings WHERE id='business'").fetchone()
         service_rows=conn.execute("SELECT payload, active FROM services ORDER BY id").fetchall()
         category_rows=conn.execute("SELECT id, name, active, sort_order FROM service_categories ORDER BY sort_order, name").fetchall()
-    services=[]
-    for row in service_rows:
-        payload=dict(row["payload"])
-        payload["active"]=bool(row["active"])
-        try:
-            payload=Service(**payload).model_dump(mode="json")
-        except Exception:
-            pass
-        services.append(payload)
-    categories=[dict(row) for row in category_rows]
+    services=get_service_values(include_inactive=True)
+    categories=get_category_values(include_inactive=True)
     return {
-        "settings": settings_row["payload"] if settings_row else dict(memory_settings),
+        "settings": get_settings_value(),
         "services": services,
         "categories": categories,
         "summary": {
@@ -1300,6 +1292,14 @@ def update_service(service_id: str, payload: Service, x_session_token: str | Non
     staff = require_permission("admin",x_session_token)
     brand_id, store_id = operational_scope(staff)
     payload = payload.model_copy(update={"id": service_id, "business_id": brand_id, "location_id": store_id})
+    if service_id in configuration.load(sys.modules[__name__],True)['payload']['services']:
+        local_exists=service_id in memory_services if not DATABASE_URL else False
+        if DATABASE_URL:
+            with db() as conn:local_exists=bool(conn.execute('SELECT 1 FROM services WHERE id=%s',(service_id,)).fetchone())
+        if not local_exists:
+            data={k:v for k,v in payload.model_dump(mode='json').items() if k not in ('business_id','location_id')}
+            configuration.store_patch(sys.modules[__name__],'services',service_id,data,staff)
+            return payload
     if not DATABASE_URL:
         if service_id not in memory_services:
             raise HTTPException(404, "Service not found")
@@ -1373,7 +1373,7 @@ def scheduling_admin_summary(x_session_token: str | None = Header(default=None))
         "areas":areas,
         "slots":[dict(r) for r in slot_rows],
         "blackouts":[dict(r) for r in blackout_rows],
-        "settings":settings_row["payload"] if settings_row else dict(memory_settings),
+        "settings":get_settings_value(),
     }
 
 @app.get("/api/scheduling/areas")
@@ -1505,13 +1505,7 @@ def scheduled_orders(date: str = "", q: str = "", x_session_token: str | None = 
 @app.get("/api/offers")
 def list_offers(include_inactive: bool = False, x_session_token: str | None = Header(default=None)):
     require_permission("admin" if include_inactive else "orders",x_session_token)
-    if not DATABASE_URL: return {"offers": [dict(r) for r in memory_catalogs["offers"].values() if include_inactive or r.get("active", True)]}
-    with db() as conn:
-        if include_inactive:
-            rows = conn.execute("SELECT * FROM offers ORDER BY created_at DESC").fetchall()
-        else:
-            rows = conn.execute("SELECT * FROM offers WHERE active=TRUE ORDER BY created_at DESC").fetchall()
-    return {"offers": [dict(r) for r in rows]}
+    return {"offers":configuration.offer_values(sys.modules[__name__],include_inactive)}
 
 @app.post("/api/offers")
 def create_offer(payload: dict, x_session_token: str | None = Header(default=None)):
@@ -1531,7 +1525,12 @@ def create_offer(payload: dict, x_session_token: str | None = Header(default=Non
 
 @app.put("/api/offers/{offer_id}")
 def update_offer(offer_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
-    require_permission("admin",x_session_token)
+    actor=require_permission("admin",x_session_token)
+    inherited=next((r for r in configuration.offer_values(sys.modules[__name__],True) if r['id']==offer_id and r.get('template_id')),None)
+    if inherited:
+        patch={k:v for k,v in payload.items() if k in configuration.OFFER_KEYS}
+        configuration.store_patch(sys.modules[__name__],'offers',inherited['template_id'],patch,actor)
+        return next(r for r in configuration.offer_values(sys.modules[__name__],True) if r['id']==offer_id)
     if not DATABASE_URL: return save_memory_record("offers", {**payload, "id": offer_id}, updating=True)
     with db() as conn:
         current = conn.execute("SELECT * FROM offers WHERE id=%s", (offer_id,)).fetchone()
@@ -1954,8 +1953,7 @@ def create_order(payload: OrderCreate, x_session_token: str | None = Header(defa
     if not DATABASE_URL:
         memory_orders[order_id] = order
         if applied_offer:
-            applied_offer["usage_count"] = int(applied_offer.get("usage_count", 0)) + 1
-            memory_catalogs["offers"][applied_offer["id"]] = applied_offer
+            configuration.consume_offer(sys.modules[__name__],None,applied_offer)
         ensure_order_garments(order_id)
         return order
 
@@ -1969,7 +1967,7 @@ def create_order(payload: OrderCreate, x_session_token: str | None = Header(defa
         )
         conn.execute("UPDATE customers SET updated_at=NOW() WHERE id=%s", (customer.id,))
         if applied_offer:
-            conn.execute("UPDATE offers SET usage_count=usage_count+1 WHERE id=%s", (applied_offer["id"],))
+            configuration.consume_offer(sys.modules[__name__],conn,applied_offer)
     record_order_event(order.id, "order_created", None, order.status, metadata={"order_number": order.order_number, "quick_dropoff": order.quick_dropoff, "staff_id": staff.get("id"), "staff_name": staff.get("name")})
     if applied_offer:
         record_order_event(order.id, "promo_applied", None, order.promo_code, metadata={"offer_id": order.offer_id, "discount": order.discount})
@@ -3487,3 +3485,5 @@ def dashboard(x_session_token: str | None = Header(default=None)):
 
 
 register_platform_routes(app, sys.modules[__name__])
+
+configuration.register(app, sys.modules[__name__])

@@ -1,0 +1,5 @@
+const {test}=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs'),path=require('node:path'),ts=require('typescript');
+const exportsModule={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../src/configuration.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports:exportsModule});
+test('prices reject empty, negative and nonfinite input',()=>{assert.equal(exportsModule.amount(' 12.50 '),12.5);for(const value of ['',' ','-1','NaN','Infinity','1x'])assert.throws(()=>exportsModule.amount(value));});
+test('configuration source labels distinguish explicit overrides and defaults',()=>{assert.equal(exportsModule.sourceLabel('store'),'Store override');assert.equal(exportsModule.sourceLabel('brand'),'Brand default');assert.equal(exportsModule.sourceLabel('system'),'System default');});
+test('template identifiers are deterministic and bounded',()=>{assert.equal(exportsModule.templateId('  Wash & Fold  '),'wash-fold');assert.equal(exportsModule.templateId('A'.repeat(200)).length,100);});

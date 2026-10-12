@@ -22,6 +22,7 @@ export default function RootLayout() {
         <Stack.Screen name="customer-profile" />
         <Stack.Screen name="walk-in" />
         <Stack.Screen name="admin" />
+        <Stack.Screen name="configuration" />
         <Stack.Screen name="staff" />
         <Stack.Screen name="platform-admin" />
         <Stack.Screen name="brand-stores" />

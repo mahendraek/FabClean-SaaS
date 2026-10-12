@@ -157,6 +157,7 @@ export default function Admin(){
     <View style={s.adminGrid}>
       {context?.is_super_admin?<AdminCard icon={<Sparkle size={21} color={colors.primary}/>} title="Platform & Brands" text="SuperAdmin tenant management" onPress={()=>router.push("/platform-admin")}/>:null}
       {context?.assignments?.some((a:any)=>a.role==="brand_admin")||context?.is_super_admin?<AdminCard icon={<Sparkle size={21} color={colors.primary}/>} title="Brand & Stores" text="Stores, hierarchy and locations" onPress={()=>router.push("/brand-stores")}/>:null}
+      <AdminCard icon={<Gear size={21} color={colors.primary}/>} title="Brand Defaults & Overrides" text="Inherited settings, service prices and offers" onPress={()=>router.push("/configuration")}/>
       <AdminCard icon={<Truck size={21} color={colors.primary}/>} title="Pickup & Delivery" text="Coverage, slots and schedules" onPress={()=>router.push("/scheduling")}/>
       <AdminCard icon={<UsersThree size={21} color={colors.primary}/>} title="Staff & Roles" text="Access and staff permissions" onPress={()=>router.push("/staff")}/>
       <AdminCard icon={<Wallet size={21} color={colors.primary}/>} title="Financial" text="Payments and financial activity" onPress={()=>router.push("/financial")}/>
