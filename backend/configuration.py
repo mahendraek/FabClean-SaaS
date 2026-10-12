@@ -197,7 +197,17 @@ def register(app,s):
                                     with s.db() as conn:conn.execute('DELETE FROM services WHERE id=%s',(key,))
                         else:
                             if not isinstance(value,dict):raise HTTPException(400,'Overrides must be objects or null')
-                            combined={**document[section].get(key,{}),**value}
+                            legacy={}
+                            if section=='services':
+                                if not s.DATABASE_URL:
+                                    local=s.memory_services.get(key)
+                                    legacy=local.model_dump(mode='json') if local is not None else {}
+                                else:
+                                    with s.db() as conn:
+                                        local=conn.execute('SELECT payload,active FROM services WHERE id=%s',(key,)).fetchone()
+                                        if local:legacy={**local['payload'],'active':local['active']}
+                                legacy={k:v for k,v in legacy.items() if k in Service.model_fields and k not in ('business_id','location_id')}
+                            combined={**legacy,**document[section].get(key,{}),**value}
                             validator({**templates[section][key],**combined},key)
                             if section=='services':
                                 if not s.DATABASE_URL:s.memory_services.pop(key,None)

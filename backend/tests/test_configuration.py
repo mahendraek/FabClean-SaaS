@@ -90,3 +90,8 @@ class ConfigurationAPITests(unittest.TestCase):
             r=self.f.request(0,'post','/api/orders',{'customer_name':'Licence check','customer_phone':'5551111','service_address':'Local test address','fulfillment_type':'pickup_only','items':[{'service_id':'brand-wash','service_name':'Brand wash','quantity':1,'unit_price':10}]});self.assertEqual(r.status_code,400);self.assertIn('disabled',r.json()['detail'].lower())
         finally:
             with server.db() as conn:conn.execute("UPDATE brands SET entitlement_overrides='{}'::jsonb WHERE id=%s",(self.f.brand_a,))
+    def test_price_override_preserves_existing_local_definition_until_reset(self):
+        self.seed();self.f.ok(0,'post','/api/services',{'id':'brand-wash','name':'Local specialty wash','category':'Local category','pricing_type':'per_item','base_price':25,'pickup_eligible':False,'turnaround_hours':72})
+        self.assertEqual(self.put('store',{'services':{'brand-wash':{'base_price':8}}},0).status_code,200)
+        value=self.service();self.assertEqual(value['base_price'],8);self.assertEqual(value['name'],'Local specialty wash');self.assertEqual(value['category'],'Local category');self.assertFalse(value['pickup_eligible']);self.assertEqual(value['turnaround_hours'],72)
+        self.put('store',{'services':{'brand-wash':None}},0);self.assertEqual(self.service()['name'],'Brand wash')

@@ -14,6 +14,6 @@ See [design, migration, APIs and validation](../PR8_IMPLEMENTATION.md).
 
 ## Validation and boundaries
 
-99 backend tests without skips, 26 frontend tests, clean TypeScript, 29-route web export, four desktop/mobile-web browser suites and local load gate pass. The three new tables use forced RLS; legacy operational/custody policies remain intact. Native-device and authenticated production acceptance remain unperformed; hosted GitHub CI/review flags cannot be verified because API access is Forbidden.
+100 backend tests without skips, 26 frontend tests, clean TypeScript, 29-route web export, four desktop/mobile-web browser suites and local load gate pass. The three new tables use forced RLS; legacy operational/custody policies remain intact. Native-device and authenticated production acceptance remain unperformed; hosted GitHub CI/review flags cannot be verified because API access is Forbidden.
 
 Only mahendraek/FabClean-SaaS changes. Production remains on PR #7. PR #9–#12 remain planned. This development authorization does not authorize merge/deployment of PR #8; explicit approval is required.

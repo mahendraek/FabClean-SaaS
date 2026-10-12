@@ -2,29 +2,29 @@
   "orders_seeded": 50,
   "requests": 160,
   "workers": 8,
-  "elapsed_seconds": 3.695,
-  "requests_per_second": 43.31,
+  "elapsed_seconds": 3.393,
+  "requests_per_second": 47.15,
   "errors": 0,
   "paths": {
     "/api/orders": {
-      "p50_ms": 147.2,
-      "p95_ms": 882.99,
-      "p99_ms": 883.88
+      "p50_ms": 154.41,
+      "p95_ms": 238.2,
+      "p99_ms": 277.73
     },
     "/api/dashboard": {
-      "p50_ms": 144.16,
-      "p95_ms": 821.26,
-      "p99_ms": 846.08
+      "p50_ms": 156.35,
+      "p95_ms": 317.27,
+      "p99_ms": 336.71
     },
     "/api/context": {
-      "p50_ms": 153.48,
-      "p95_ms": 222.15,
-      "p99_ms": 853.18
+      "p50_ms": 169.73,
+      "p95_ms": 294.18,
+      "p99_ms": 350.46
     },
     "/api/handoffs": {
-      "p50_ms": 142.91,
-      "p95_ms": 811.72,
-      "p99_ms": 828.93
+      "p50_ms": 155.95,
+      "p95_ms": 255.85,
+      "p99_ms": 258.16
     }
   },
   "environment": {
@@ -35,9 +35,9 @@
   },
   "pool": {
     "requests_num": 640,
-    "connections_num": 5,
-    "requests_queued": 324,
-    "requests_wait_ms": 1994,
+    "connections_num": 6,
+    "requests_queued": 294,
+    "requests_wait_ms": 2029,
     "size": 8
   }
 }
