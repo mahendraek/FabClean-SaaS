@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ArrowLeft, Barcode, CheckCircle, Minus, Plus, Printer, Sparkle, Trash } from "phosphor-react-native";
+import { TaxBreakdown } from "@/src/TaxBreakdown";
+import { useTaxEstimate } from "@/src/useTaxEstimate";
 import { api } from "@/src/api";
 import { Code128 } from "@/src/Code128";
 import { colors } from "@/src/theme";
@@ -13,7 +15,7 @@ type OrderEvent={id:string;event_type:string;from_value?:string|null;to_value?:s
 type Garment={id:string;garment_code:string;garment_index:number;service_name:string;last_stage:string;assembled:boolean;tag_print_count:number};
 type Order={
   id:string;order_number:string;barcode_value:string;status:string;total:number;subtotal:number;
-  discount:number;tax:number;payment_status:string;payment_method:string;notes:string;
+  discount:number;tax:number;tax_snapshot?:any;payment_status:string;payment_method:string;notes:string;
   due_at?:string|null;pricing_status?:string;
   fulfillment_type?:string;service_area_name?:string;scheduled_slot_label?:string;service_address?:string;service_postal_code?:string;delivery_fee?:number;pickup_date?:string;pickup_slot_label?:string;delivery_date?:string;delivery_slot_label?:string;
   customer:{name:string;phone:string;email?:string};items:Line[];
@@ -71,7 +73,8 @@ export default function OrderDetail(){
   }
   useEffect(()=>{load();},[id]);
 
-  const total=useMemo(()=>lines.reduce((a,l)=>a+l.quantity*l.unit_price,0),[lines]);
+  const taxEstimate=useTaxEstimate(order?{order_id:order.id,items:lines,discount:order.discount||0,delivery_fee:order.delivery_fee||0}:null);
+  const total=taxEstimate.result?.total??order?.total??0;
 
   function addService(s:Service){
     const i=lines.findIndex(x=>x.service_id===s.id);
@@ -83,6 +86,7 @@ export default function OrderDetail(){
 
   async function save(){
     if(!order)return;
+    if(taxEstimate.busy||taxEstimate.error){setErr(taxEstimate.error||"Wait for the tax estimate");return;}
     setSaving(true);setErr("");setOk("");
     try{
       const updated=await api.put<Order>("/orders/"+order.id,{
@@ -217,7 +221,7 @@ export default function OrderDetail(){
           <Text style={s.label}>Notes</Text><TextInput style={s.input} value={paymentNotes} onChangeText={setPaymentNotes} placeholder="Optional payment note"/>
           <View style={s.payActions}><Pressable disabled={paymentBusy} onPress={recordPayment} style={s.payBtn}><Text style={s.payBtnText}>{paymentBusy?"Saving…":"Record Payment"}</Text></Pressable><Pressable disabled={paymentBusy} onPress={recordRefund} style={s.refundBtn}><Text style={s.refundBtnText}>Refund</Text></Pressable></View>
           <Pressable onPress={printReceipt} style={s.receiptBtn}><Printer size={16} color={colors.primary}/><Text style={s.receiptText}>Print Receipt</Text></Pressable>
-          {payments.length?<View style={{marginTop:12}}>{payments.map((p:any)=><View key={p.id} style={s.paymentRow}><View style={{flex:1}}><Text style={s.rowStrong}>{pretty(p.transaction_type)} · {pretty(p.payment_method)}</Text><Text style={s.meta}>{p.receipt_number} · {p.staff_name||"Staff"}{p.reference_number?" · "+p.reference_number:""}</Text></View><Text style={s.amount}>{Number(p.amount||0)<0?"-$"+Math.abs(Number(p.amount||0)).toFixed(2):"$"+Number(p.amount||0).toFixed(2)}</Text></View>)}</View>:<Text style={s.meta}>No payment transactions yet.</Text>}
+          {payments.length?<View style={{marginTop:12}}>{payments.map((p:any)=><View key={p.id} style={s.paymentRow}><View style={{flex:1}}><Text style={s.rowStrong}>{pretty(p.transaction_type)} · {pretty(p.payment_method)}</Text><Text style={s.meta}>{p.receipt_number} · {p.staff_name||"Staff"}{p.transaction_type==="refund"?" · Tax credit $"+Number(p.tax_amount||0).toFixed(2):""}{p.reference_number?" · "+p.reference_number:""}</Text></View><Text style={s.amount}>{Number(p.amount||0)<0?"-$"+Math.abs(Number(p.amount||0)).toFixed(2):"$"+Number(p.amount||0).toFixed(2)}</Text></View>)}</View>:<Text style={s.meta}>No payment transactions yet.</Text>}
         </View>
 
         <View style={s.panel}>
@@ -228,6 +232,7 @@ export default function OrderDetail(){
           <View style={s.chips}>{["unpaid","partial","paid"].map(x=><Pressable key={x} onPress={()=>setPaymentStatus(x)} style={[s.chip,paymentStatus===x&&s.chipOn]}><Text style={[s.chipText,paymentStatus===x&&s.chipTextOn]}>{pretty(x)}</Text></Pressable>)}</View>
           <Text style={s.label}>Status</Text>
           <View style={s.statusList}>{statuses.map(x=><Pressable key={x} onPress={()=>setStatus(x)} style={[s.statusBtn,status===x&&s.statusBtnOn]}><Text style={[s.statusText,status===x&&s.statusTextOn]}>{pretty(x)}</Text></Pressable>)}</View>
+          {taxEstimate.error&&<Text accessibilityRole="alert" style={s.err}>{taxEstimate.error}</Text>}<TaxBreakdown snapshot={taxEstimate.result?.tax_snapshot||order.tax_snapshot} tax={taxEstimate.result?.tax??order.tax}/>
           <View style={s.total}><Text style={s.totalLabel}>{pricingStatus==="final"?"Final total":"Estimated total"}</Text><Text style={s.totalValue}>{"$"+total.toFixed(2)}</Text></View>
           {err?<Text style={s.err}>{err}</Text>:null}{ok?<View style={s.okRow}><CheckCircle size={16} color={colors.success}/><Text style={s.ok}>{ok}</Text></View>:null}
           <Pressable onPress={save} disabled={saving||pricingStatus==="final"&&!lines.length} style={[s.saveBtn,(saving||pricingStatus==="final"&&!lines.length)&&{opacity:.45}]}><Text style={s.saveText}>{saving?"Saving…":"Save Order Changes"}</Text></Pressable>

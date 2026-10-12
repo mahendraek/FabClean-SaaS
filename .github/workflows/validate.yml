@@ -25,6 +25,9 @@ jobs:
           --health-retries 10
     env:
       FABCLEAN_TEST_DATABASE_URL: postgresql://fabclean_test:local-ci-only@127.0.0.1:5432/fabclean_test
+      # The validation script changes XDG_CACHE_HOME; browser install and launch
+      # must therefore use an explicit shared directory throughout the job.
+      PLAYWRIGHT_BROWSERS_PATH: /tmp/fabclean-playwright
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -48,6 +51,17 @@ jobs:
         working-directory: frontend
       - run: npx playwright install --with-deps chromium
         working-directory: frontend
+      - name: Verify installed Chromium starts
+        working-directory: frontend
+        run: |
+          XDG_CACHE_HOME="${XDG_CACHE_HOME:-/tmp/fabclean-cache}" node - <<'JS'
+          const { chromium } = require('playwright');
+          (async () => {
+            const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
+            console.log('Installed Chromium starts:', browser.version());
+            await browser.close();
+          })().catch(error => { console.error(error); process.exitCode = 1; });
+          JS
       - name: Backend, PostgreSQL RLS, load, frontend and browser validation
         run: scripts/validate.sh
       - name: Save validation evidence
