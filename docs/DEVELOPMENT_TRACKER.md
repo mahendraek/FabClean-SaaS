@@ -41,7 +41,7 @@ The implementation adds forced PostgreSQL row-level security on 21 operational t
 | 4 | [#6](https://github.com/mahendraek/FabClean-SaaS/pull/6) | P1 | [Security, testing and performance](roadmap/security-performance.md) | Merged at `dd031a7`; both Render services live; smoke checks passed | #4, #3, #5 |
 | 5 | [#7](https://github.com/mahendraek/FabClean-SaaS/pull/7) | P1 | [Platform administration/onboarding](roadmap/platform-management.md) | Merged at `43f3cbf`; both Render services live; smoke checks passed | #4, #6 |
 | 6 | [#8](https://github.com/mahendraek/FabClean-SaaS/pull/8) | P2 | [Brand defaults/store overrides](roadmap/configuration-inheritance.md) | Merged at `7b193db`; both Render services live; smoke checks passed | #4, #5, #7 |
-| 7 | [#9](https://github.com/mahendraek/FabClean-SaaS/pull/9) | P2 | [Location-aware taxes](roadmap/location-taxes.md) | Validated; awaiting review | #8 |
+| 7 | [#9](https://github.com/mahendraek/FabClean-SaaS/pull/9) | P2 | [Location-aware taxes](roadmap/location-taxes.md) | Merged at `9e68ce3`; deployment blocked | #8 |
 | 8 | [#10](https://github.com/mahendraek/FabClean-SaaS/pull/10) | P2 | [OpenStreetMap delivery coverage](roadmap/service-area-maps.md) | Planned | #5, #8 |
 | 9 | [#11](https://github.com/mahendraek/FabClean-SaaS/pull/11) | P2 | [Email/SMS receipts and preferences](roadmap/notifications-receipts.md) | Planned | #4, #8, #9 |
 | 10 | [#12](https://github.com/mahendraek/FabClean-SaaS/pull/12) | P2 | [Consolidated reporting/exports](roadmap/cross-store-reporting.md) | Planned | #4, #5, #9 |
