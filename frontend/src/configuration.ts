@@ -1,0 +1,5 @@
+export type ConfigurationDocument = { settings: Record<string, any>; services: Record<string, any>; offers: Record<string, any> };
+export type ConfigurationSnapshot = { system_settings: Record<string, any>; brand: { payload: ConfigurationDocument; revision: number }; store: { payload: ConfigurationDocument; revision: number }; settings: Record<string, any>; local_settings: Record<string, any>; settings_sources: Record<string, string>; services: any[]; service_sources: Record<string, string>; offers: any[]; can_edit_brand: boolean };
+export function amount(text: string): number { const value = Number(text); if (!text.trim() || !Number.isFinite(value) || value < 0) throw new Error("Enter a non-negative number"); return value; }
+export function sourceLabel(source?: string): string { return source === "store" ? "Store override" : source === "brand" ? "Brand default" : "System default"; }
+export function templateId(name: string): string { return name.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-|-$/g, "").slice(0, 100); }
