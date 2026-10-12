@@ -62,3 +62,7 @@ These tables are deliberate global platform/authentication control state, alongs
 - Health/audit: GET `/api/platform/health`, GET `/api/platform/audit` with optional brand filter and capped limit.
 
 Before deployment, review plan defaults, run the common validation gate, verify PUBLIC_WEB_URL for any custom domain, retain non-bypass database ownership, and use the existing explicitly approved manual release procedure. Native staging acceptance should cover secure-session restart, invitation code entry/link cleanup, existing-account proof, OS sharing/cancel and lifecycle recovery. PR #8–#12 remain queued; settings inheritance, taxes, maps, receipts and consolidated reporting are outside this PR.
+
+## Publication evidence
+
+Implementation commit `065d1e0`; planning ancestry joined at `e1a8977` without changing the validated implementation tree. On 12 October 2026, authenticated Git independently verified both `codex/pr-7-platform-onboarding` and `roadmap/platform-management`, plus `refs/pull/7/head`, at `e1a8977`. Main remained `76b1bea`. A documentation-only follow-up records this evidence. GitHub rejected the PR title/body update with GraphQL Forbidden; review scope is retained here and in the roadmap document. Git refs establish publication, not hosted review/CI or open/merged state. No merge into main or deployment was performed.

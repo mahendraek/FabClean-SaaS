@@ -5,6 +5,7 @@ Priority: P1 — current sequential roadmap item.
 PR: https://github.com/mahendraek/FabClean-SaaS/pull/7
 Implementation branch: `codex/pr-7-platform-onboarding`, based on accepted main `76b1bea`.
 Implemented: 12 October 2026.
+Implementation: `065d1e0`; published planning merge: `e1a8977`, verified at both branch refs and PR #7 head. A documentation-only follow-up records publication. GitHub title/body update returned Forbidden; hosted metadata remains unverified.
 
 ## Delivered scope
 
