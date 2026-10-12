@@ -80,7 +80,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const error: any = new Error(typeof data?.detail === "string" ? data.detail : `Request failed (HTTP ${res.status}). Retry shortly.`);
     error.status = res.status;
     error.retryAfter = res.headers?.get("Retry-After") || null;
-    if (res.status === 401) await setStoredSession(null, "");
+    if (res.status === 401 && (!path.startsWith("/auth/") || path === "/auth/me")) await setStoredSession(null, "");
     throw error;
   }
   if (path === "/context") {

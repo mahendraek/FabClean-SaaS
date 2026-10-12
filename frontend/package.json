@@ -11,7 +11,8 @@
     "test:context": "node --test tests/api-session.test.cjs",
     "test:context:browser": "node tests/context-browser.cjs",
     "test:unit": "node --test tests/*.test.cjs",
-    "test:handoffs:browser": "node tests/handoffs-browser.cjs"
+    "test:handoffs:browser": "node tests/handoffs-browser.cjs",
+    "test:platform:browser": "node tests/platform-browser.cjs"
   },
   "dependencies": {
     "@expo/metro-runtime": "57.0.15",

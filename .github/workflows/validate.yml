@@ -49,7 +49,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
         working-directory: frontend
       - name: Backend, PostgreSQL RLS, load, frontend and browser validation
-        run: scripts/validate_pr6.sh
+        run: scripts/validate.sh
       - name: Save validation evidence
         if: always()
         uses: actions/upload-artifact@v4
