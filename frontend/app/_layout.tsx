@@ -2,15 +2,17 @@ import { Stack } from "expo-router";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 
+import { InvitationTokenProvider } from "@/src/InvitationToken";
 import { ActiveContext } from "@/src/ActiveContext";
 
 export default function RootLayout() {
   return (
     <SafeAreaProvider><SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
       <StatusBar style="dark" />
-      <ActiveContext>{key => <Stack key={key} screenOptions={{ headerShown: false }}>
+      <InvitationTokenProvider><ActiveContext>{key => <Stack key={key} screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="sign-in" />
+        <Stack.Screen name="accept-invite" />
         <Stack.Screen name="services" />
         <Stack.Screen name="orders" />
         <Stack.Screen name="handoffs" />
@@ -33,7 +35,7 @@ export default function RootLayout() {
         <Stack.Screen name="garment-tags" />
         <Stack.Screen name="garment-assembly" />
         <Stack.Screen name="hardware" />
-      </Stack>}</ActiveContext>
+      </Stack>}</ActiveContext></InvitationTokenProvider>
     </SafeAreaView></SafeAreaProvider>
   );
 }

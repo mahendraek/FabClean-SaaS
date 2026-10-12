@@ -104,3 +104,9 @@ test('permission removed during selection restoration discards the preference', 
  vm.runInNewContext(selectionSource, { exports, require: name => name === './api' ? module : name === 'react-native' ? { StyleSheet: { create: x => x } } : name === './theme' ? { colors: {} } : {} });
  await exports.restoreSelection(); assert.equal(removed, true);
 });
+test('failed invitation identity proof preserves an unrelated valid session', async () => {
+ const { api, sandbox } = await setup(); await api.setStoredSession({ id: 'current' }, 'valid-current-token');
+ sandbox.fetch = async () => ({ ok: false, status: 401, text: async () => '{"detail":"Use the invited account password"}' });
+ await assert.rejects(api.api.post('/auth/owner-invitations/accept', {}), e => e.status === 401);
+ assert.equal(api.getStoredToken(), 'valid-current-token');
+});

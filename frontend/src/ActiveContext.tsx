@@ -68,13 +68,14 @@ export function ActiveContext({ children }: { children: (key: string) => React.R
     finally { setBusy(false); }
   }
   const signedIn = ready && Boolean(getStoredStaff());
+  const publicRoute = pathname === "/sign-in" || pathname === "/accept-invite";
   return <View style={{ flex: 1 }}>
-    {signedIn && pathname !== "/sign-in" && <View style={s.header}>
+    {signedIn && !publicRoute && <View style={s.header}>
       <View style={{ flex: 1 }}><Text style={s.label}>ACTIVE BRAND / STORE</Text><Text style={s.title}>{context?.active_brand?.name || "Select brand"} · {context?.active_store?.name || "Select store"}</Text></View>
       <Pressable accessibilityRole="button" disabled={!ready || busy || !context} onPress={() => { setBrandId(context?.active_brand?.id || context?.brands[0]?.id || ""); setSelected(null); setOpen(true); }} style={s.button}><Text style={s.buttonText}>Switch store</Text></Pressable>
     </View>}
     {error && <View style={s.notice}><Text accessibilityRole="alert" style={{ color: colors.danger }}>{error}</Text><Pressable onPress={() => void load()}><Text>Retry</Text></Pressable></View>}
-    {!ready || busy ? <ActivityIndicator style={{ flex: 1 }} accessibilityLabel="Loading active store" /> : signedIn && !context && pathname !== "/sign-in" ? <View style={s.notice}><Text>Store context is unavailable.</Text><Pressable onPress={() => router.replace("/sign-in")}><Text>Sign in</Text></Pressable></View> : children(`${previous.current}:${revision}`)}
+    {!ready || busy ? <ActivityIndicator style={{ flex: 1 }} accessibilityLabel="Loading active store" /> : signedIn && !context && !publicRoute ? <View style={s.notice}><Text>Store context is unavailable.</Text><Pressable onPress={() => router.replace("/sign-in")}><Text>Sign in</Text></Pressable></View> : children(`${previous.current}:${revision}`)}
     <Modal visible={open} transparent animationType="fade" onRequestClose={() => { if (!busy) setOpen(false); }}>
       <View style={s.overlay}><View style={s.dialog}>
         <Text style={s.title}>Switch brand and store</Text><Text>Changing stores closes the current screen and discards unsaved changes.</Text>

@@ -19,7 +19,9 @@ The implementation adds forced PostgreSQL row-level security on 21 operational t
 
 **PR #6 — security, testing and performance:** accepted and merged into main at `dd031a7` with explicit user approval. Implementation `9ee0362`, published head `c8cbd1b`, and planning ancestry `19c7742` are retained. Both Render services are live on `dd031a7`; health, production CORS, unauthenticated authorization and fresh web bundle checks pass. Validation: 61 backend tests, 19 frontend tests, clean TypeScript, 27-route export, desktop/mobile browser flows and local load evidence. Automatic Render deployment is off; this authorized release used the documented local-validation/manual-deployment fallback while GitHub CI/required-check state remains Forbidden. See [deployment status](DEPLOYMENT_STATUS.md), [release review](PR6_SECURITY_RELEASE.md) and [performance evidence](performance/PR6_BASELINE.md).
 
-**Next:** PR #7 — platform administration/onboarding. No development has started on future items.
+**Current: PR #7 — platform administration/onboarding:** implemented on `codex/pr-7-platform-onboarding`, based on accepted main `76b1bea`; validated and awaiting review. Includes atomic brand/store/owner onboarding, secure owner invitations, plans/entitlements/resource limits, suspension/reactivation, platform health/readiness and append-only audit. Validation: 80 backend tests, 23 frontend tests, clean TypeScript, 28-route export, local load gate and desktop/mobile context/handoff/onboarding flows. Native/actual delivery and hosted CI/review verification remain outstanding. Not merged or deployed. See [implementation notes](PR7_IMPLEMENTATION.md).
+
+**Next after PR #7 acceptance:** PR #8 — brand defaults/store overrides. No future item has started.
 
 ## Sequential PR queue
 
@@ -29,7 +31,7 @@ The implementation adds forced PostgreSQL row-level security on 21 operational t
 | 2 | [#3](https://github.com/mahendraek/FabClean-SaaS/pull/3) | P0 | [Shared brand/store switcher](roadmap/brand-store-experience.md) | Merged at `cd99661`; Render live and smoke checks passed | #4 |
 | 3 | [#5](https://github.com/mahendraek/FabClean-SaaS/pull/5) | P1 | [Store hierarchy and operational handoffs](roadmap/store-hierarchy.md) | Merged at `9753435`; Render live and smoke checks passed | #4, #3 |
 | 4 | [#6](https://github.com/mahendraek/FabClean-SaaS/pull/6) | P1 | [Security, testing and performance](roadmap/security-performance.md) | Merged at `dd031a7`; both Render services live; smoke checks passed | #4, #3, #5 |
-| 5 | [#7](https://github.com/mahendraek/FabClean-SaaS/pull/7) | P1 | [Platform administration/onboarding](roadmap/platform-management.md) | Planned | #4, #6 |
+| 5 | [#7](https://github.com/mahendraek/FabClean-SaaS/pull/7) | P1 | [Platform administration/onboarding](roadmap/platform-management.md) | Validated; awaiting review | #4, #6 |
 | 6 | [#8](https://github.com/mahendraek/FabClean-SaaS/pull/8) | P2 | [Brand defaults/store overrides](roadmap/configuration-inheritance.md) | Planned | #4, #5, #7 |
 | 7 | [#9](https://github.com/mahendraek/FabClean-SaaS/pull/9) | P2 | [Location-aware taxes](roadmap/location-taxes.md) | Planned | #8 |
 | 8 | [#10](https://github.com/mahendraek/FabClean-SaaS/pull/10) | P2 | [OpenStreetMap delivery coverage](roadmap/service-area-maps.md) | Planned | #5, #8 |

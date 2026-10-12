@@ -12,6 +12,8 @@ from contextvars import ContextVar
 from functools import wraps
 import logging
 import math
+import sys
+import re
 
 import psycopg
 from psycopg.rows import dict_row
@@ -30,6 +32,7 @@ from seed import SERVICES
 from store_operations import STORE_TYPES, validate_hierarchy, next_handoff_status, work_manifest, install_store_operations
 from tenant_scope import current_scope, ScopedMemoryDict, configure_connection, migration_installed, install_isolation
 
+from platform_management import install_platform, brand_policy, entitlements, ALL_FEATURES, CAPABILITY_FEATURE, route_feature, require_capacity, validate_policy_change, validate_overrides, create_invite, audit as platform_audit_write, register_platform_routes, login_scope
 from database_pool import get_pool, close_pools
 from psycopg_pool import PoolTimeout, TooManyRequests
 
@@ -45,6 +48,7 @@ access_logger.propagate = False
 # Raw access URLs may contain query secrets; use structured route logs.
 logging.getLogger("uvicorn.access").disabled = True
 
+request_entitlements = ContextVar("request_entitlements", default=None)
 request_staff = ContextVar("request_staff", default=None)
 
 app = FastAPI(title="FabClean API", version="1.2.0")
@@ -162,6 +166,7 @@ async def isolate_request(request: Request, call_next):
     actor_id = None
     token = current_scope.set(None)
     staff_token = request_staff.set(None)
+    entitlement_token = request_entitlements.set(None)
     try:
         path = request.url.path
         exempt = path in ("/", "/api/health", "/api/context") or path.startswith(("/api/auth/", "/api/platform/", "/api/brand/stores"))
@@ -176,6 +181,9 @@ async def isolate_request(request: Request, call_next):
             actor_id = staff.get("id")
             current_scope.set(scope)
             request_staff.set((request.headers.get("x-session-token"), staff))
+            feature = route_feature(path)
+            if feature and not feature_allowed(feature):
+                raise HTTPException(403, f"{feature.title()} is not included in this brand's entitlements")
         response = await call_next(request)
         status = response.status_code
         response.headers["X-Request-ID"] = request_id
@@ -190,6 +198,7 @@ async def isolate_request(request: Request, call_next):
             "route": getattr(route, "path", "unmatched"), "status": status,
             "duration_ms": round((time.perf_counter()-started)*1000, 2),
             "actor_id": actor_id, "scope": current_scope.get()}))
+        request_entitlements.reset(entitlement_token)
         request_staff.reset(staff_token)
         current_scope.reset(token)
 
@@ -224,6 +233,7 @@ def init_db():
         install_security(conn)
         if migration_installed(conn):
             install_store_operations(conn)
+            install_platform(conn)
             return
         conn.execute("""
             CREATE TABLE IF NOT EXISTS app_settings (
@@ -722,6 +732,7 @@ def init_db():
         install_isolation(conn)
         if migration_installed(conn):
             install_store_operations(conn)
+            install_platform(conn)
 
 @app.on_event("startup")
 def startup():
@@ -734,7 +745,15 @@ def get_settings_value():
         row = conn.execute("SELECT payload FROM app_settings WHERE id='business'").fetchone()
         return row["payload"] if row else dict(memory_settings)
 
+def feature_allowed(feature):
+    policy = request_entitlements.get()
+    if policy is None and DATABASE_URL and current_scope.get():
+        with db() as conn: _, policy = brand_policy(conn, current_scope.get()[0])
+    return bool((policy or {"features": ALL_FEATURES})["features"].get(feature, False))
+
 def capability_enabled(key: str, default: bool = True):
+    feature = CAPABILITY_FEATURE.get(key)
+    if feature and not feature_allowed(feature): return False
     return bool(get_settings_value().get(key, default))
 
 def require_capability(key: str, label: str):
@@ -1741,7 +1760,8 @@ def operational_scope(staff: dict):
     already_validated = snapshot is not None and snapshot[1] is staff and current_scope.get() == (brand_id, store_id)
     if DATABASE_URL and not already_validated:
         with db() as conn:
-            row = conn.execute("SELECT s.id FROM stores s JOIN brands b ON b.id=s.brand_id WHERE s.id=%s AND s.brand_id=%s AND s.active=TRUE AND b.status='active'", (store_id, brand_id)).fetchone()
+            row = conn.execute("SELECT s.id,b.plan_code,b.entitlement_overrides,p.features,p.limits FROM stores s JOIN brands b ON b.id=s.brand_id JOIN platform_plans p ON p.code=b.plan_code WHERE s.id=%s AND s.brand_id=%s AND s.active=TRUE AND b.status='active'", (store_id, brand_id)).fetchone()
+        if row: request_entitlements.set(entitlements(row))
         if not row:
             raise HTTPException(403, "Selected store is unavailable")
     return brand_id, store_id
@@ -2458,6 +2478,8 @@ def get_context(x_session_token: str | None = Header(default=None)):
         else:
             stores=[]
     stores = [s for s in stores if accessible_store_ids(staff, s["brand_id"]) is None or s["id"] in accessible_store_ids(staff, s["brand_id"])]
+    active_brands = {b["id"] for b in brands if b["status"] == "active"}
+    stores = [store for store in stores if store["brand_id"] in active_brands]
     # Only resolve stores belonging to the active brand; never silently cross tenants.
     requested_brand_id=staff.get("active_brand_id") or staff.get("business_id")
     active_brand=next((dict(x) for x in brands if x["id"]==requested_brand_id),dict(brands[0]) if brands else None)
@@ -2469,6 +2491,10 @@ def get_context(x_session_token: str | None = Header(default=None)):
     active_store=next((x for x in brand_stores if x["id"]==requested_store_id),None)
     if not active_store and staff.get("active_brand_id") is None:
         active_store=brand_stores[0] if brand_stores else None
+    if active_brand:
+        with db() as conn: _, policy = brand_policy(conn, active_brand["id"])
+        active_brand["entitlements"] = policy
+        if active_brand["status"] != "active": active_store = None
     safe_staff=dict(staff); safe_staff.pop("password_hash",None); safe_staff.pop("password_salt",None)
     return {
         "staff":safe_staff,
@@ -2507,51 +2533,94 @@ def update_context(payload: dict, x_session_token: str | None = Header(default=N
 @app.get("/api/platform/brands")
 def list_brands(x_session_token: str | None = Header(default=None)):
     require_super_admin(x_session_token)
-    if not DATABASE_URL: return {"brands":[{"id":"fabclean","name":"FabClean","slug":"fabclean","status":"active"}]}
+    if not DATABASE_URL: return {"brands":[{"id":"fabclean","name":"FabClean","slug":"fabclean","status":"active","plan_code":"legacy"}]}
     with db() as conn:
-        rows=conn.execute("SELECT b.*,COUNT(s.id) AS store_count FROM brands b LEFT JOIN stores s ON s.brand_id=b.id GROUP BY b.id ORDER BY b.name").fetchall()
-    return {"brands":[dict(r) for r in rows]}
+        rows=conn.execute("""SELECT b.*,COUNT(s.id) AS store_count,COUNT(s.id) FILTER (WHERE s.active=TRUE) AS active_store_count,
+            EXISTS(SELECT 1 FROM user_role_assignments a JOIN staff_users u ON u.id=a.user_id WHERE a.brand_id=b.id AND a.role='brand_admin' AND a.scope_type='brand' AND a.store_id IS NULL AND a.active=TRUE AND u.active=TRUE) AS has_owner,
+            (SELECT COUNT(*) FROM owner_invitations i WHERE i.brand_id=b.id AND i.status='pending' AND i.expires_at>NOW()) AS pending_owners
+            FROM brands b LEFT JOIN stores s ON s.brand_id=b.id GROUP BY b.id ORDER BY b.name""").fetchall()
+    values=[]
+    for row in rows:
+        data=dict(row)
+        data["onboarding_status"] = "ready" if data["has_owner"] and data["active_store_count"] else "needs_store" if not data["active_store_count"] else "owner_invited" if data["pending_owners"] else "needs_owner"
+        values.append(data)
+    return {"brands":values}
+
+def validate_brand_profile(data):
+    name=str(data.get("name", "")).strip()
+    slug=str(data.get("slug", "")).strip().lower()
+    if not name or len(name)>160 or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*",slug) or len(slug)>80:
+        raise HTTPException(400,"Brand name and a slug of lowercase letters, numbers and hyphens are required")
+    if data.get("status","active") not in ("active","suspended"): raise HTTPException(400,"Brand status must be active or suspended")
+    return {**data,"name":name,"slug":slug}
 
 @app.post("/api/platform/brands")
 def create_brand(payload: dict, x_session_token: str | None = Header(default=None)):
     actor=require_super_admin(x_session_token)
-    name=str(payload.get("name","")).strip()
-    slug=str(payload.get("slug","")).strip().lower().replace(" ","-")
-    if not name or not slug: raise HTTPException(400,"Brand name and slug are required")
-    if not DATABASE_URL: return {"id":slug,"name":name,"slug":slug,"status":"active"}
-    brand_id=str(uuid.uuid4())
-    with db() as conn:
-        try:
-            row=conn.execute(
-                """INSERT INTO brands (id,name,slug,legal_name,status,primary_email,primary_phone,country,timezone,currency,logo_url)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
-                (brand_id,name,slug,str(payload.get("legal_name","")),str(payload.get("status","active")),str(payload.get("primary_email","")),str(payload.get("primary_phone","")),str(payload.get("country","US")),str(payload.get("timezone","America/Chicago")),str(payload.get("currency","USD")),str(payload.get("logo_url",""))),
-            ).fetchone()
-        except Exception:
-            raise HTTPException(409,"Brand slug already exists")
-    record_platform_audit(actor,"brand_created",brand_id=brand_id,metadata={"name":name,"slug":slug})
-    return dict(row)
+    data=validate_brand_profile(payload)
+    if not DATABASE_URL: raise HTTPException(503,"Platform onboarding requires PostgreSQL")
+    brand_id=str(uuid.uuid4()); invitation=None; store=None
+    with db() as conn, conn.transaction():
+        conn.execute("SELECT pg_advisory_xact_lock(471007)")
+        plan=str(data.get("plan_code","starter"))
+        if not conn.execute("SELECT 1 FROM platform_plans WHERE code=%s AND active=TRUE",(plan,)).fetchone(): raise HTTPException(400,"An active platform plan is required")
+        overrides=validate_overrides(data.get("entitlement_overrides",{}))
+        row=conn.execute("""INSERT INTO brands(id,name,slug,legal_name,status,primary_email,primary_phone,country,timezone,currency,logo_url,plan_code,entitlement_overrides)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb) RETURNING *""",(brand_id,data["name"],data["slug"],str(data.get("legal_name","")),data.get("status","active"),str(data.get("primary_email","")),str(data.get("primary_phone","")),str(data.get("country","US")),str(data.get("timezone","America/Chicago")),str(data.get("currency","USD")),str(data.get("logo_url","")),plan,json.dumps(overrides))).fetchone()
+        lock_brand_operations(conn,brand_id)
+        initial=data.get("initial_store")
+        if initial:
+            if not isinstance(initial,dict): raise HTTPException(400,"Initial store must be an object")
+            if initial.get("parent_store_id") or initial.get("active") is False: raise HTTPException(400,"Initial store must be an active root store")
+            sid=str(uuid.uuid4())
+            require_capacity(conn,brand_id,"stores")
+            validate_store_change(conn,brand_id,sid,initial)
+            store=conn.execute("INSERT INTO stores(id,brand_id,name,store_code,store_type,country,timezone) VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING *",(sid,brand_id,initial["name"].strip(),initial["store_code"].strip().upper(),initial.get("store_type","regular"),data.get("country","US"),data.get("timezone","America/Chicago"))).fetchone()
+        platform_audit_write(conn,actor,"brand_created",brand_id,{"plan_code":plan,"initial_store_id":store["id"] if store else None})
+        if data.get("owner_email"):
+            if not store: raise HTTPException(400,"Create an initial store before inviting the owner")
+            invitation=create_invite(conn,sys.modules[__name__],actor,brand_id,data["owner_email"],store["id"])
+    return {**dict(row),"initial_store":dict(store) if store else None,"invitation":invitation}
 
 @app.put("/api/platform/brands/{brand_id}")
 def update_brand(brand_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
     actor=require_super_admin(x_session_token)
-    if not DATABASE_URL: return {"id":brand_id,**payload}
-    with db() as conn:
-        current=conn.execute("SELECT * FROM brands WHERE id=%s",(brand_id,)).fetchone()
+    if not DATABASE_URL: raise HTTPException(503,"Platform lifecycle requires PostgreSQL")
+    with db() as conn, conn.transaction():
+        conn.execute("SELECT pg_advisory_xact_lock(471007)")
+        lock_brand_operations(conn,brand_id)
+        current=conn.execute("SELECT * FROM brands WHERE id=%s FOR UPDATE",(brand_id,)).fetchone()
         if not current: raise HTTPException(404,"Brand not found")
-        d=dict(current); d.update(payload)
-        row=conn.execute(
-            """UPDATE brands SET name=%s,slug=%s,legal_name=%s,status=%s,primary_email=%s,primary_phone=%s,country=%s,timezone=%s,currency=%s,logo_url=%s,updated_at=NOW()
-               WHERE id=%s RETURNING *""",
-            (str(d["name"]).strip(),str(d["slug"]).strip().lower(),str(d.get("legal_name","")),str(d.get("status","active")),str(d.get("primary_email","")),str(d.get("primary_phone","")),str(d.get("country","US")),str(d.get("timezone","America/Chicago")),str(d.get("currency","USD")),str(d.get("logo_url","")),brand_id),
-        ).fetchone()
-    record_platform_audit(actor,"brand_updated",brand_id=brand_id)
+        data=validate_brand_profile({**dict(current),**payload})
+        plan=data["plan_code"]
+        plan_row=conn.execute("SELECT * FROM platform_plans WHERE code=%s",(plan,)).fetchone()
+        if not plan_row or (plan!=current["plan_code"] and not plan_row["active"]): raise HTTPException(400,"An active platform plan is required")
+        overrides=validate_overrides(data.get("entitlement_overrides",{}))
+        policy=entitlements({"plan_code":plan,"features":plan_row["features"],"limits":plan_row["limits"],"entitlement_overrides":overrides})
+        validate_policy_change(conn,brand_id,policy)
+        changed_status=data["status"]!=current["status"]
+        reason=str(payload.get("reason","")).strip()
+        if changed_status and (not reason or len(reason)>500): raise HTTPException(400,"A lifecycle-change reason of at most 500 characters is required")
+        row=conn.execute("""UPDATE brands SET name=%s,slug=%s,legal_name=%s,status=%s,primary_email=%s,primary_phone=%s,country=%s,timezone=%s,currency=%s,logo_url=%s,plan_code=%s,entitlement_overrides=%s::jsonb,updated_at=NOW() WHERE id=%s RETURNING *""",(data["name"],data["slug"],str(data.get("legal_name","")),data["status"],str(data.get("primary_email","")),str(data.get("primary_phone","")),str(data.get("country","US")),str(data.get("timezone","America/Chicago")),str(data.get("currency","USD")),str(data.get("logo_url","")),plan,json.dumps(overrides),brand_id)).fetchone()
+        if changed_status:
+            if data["status"]=="suspended":
+                conn.execute("""DELETE FROM staff_sessions ss USING staff_users u WHERE ss.staff_id=u.id AND COALESCE(ss.active_brand_id,u.business_id)=%s
+                    AND NOT EXISTS(SELECT 1 FROM user_role_assignments a WHERE a.user_id=u.id AND a.role='super_admin' AND a.scope_type='platform' AND a.brand_id IS NULL AND a.store_id IS NULL AND a.active=TRUE)""",(brand_id,))
+            platform_audit_write(conn,actor,"brand_"+("suspended" if data["status"]=="suspended" else "reactivated"),brand_id,{"reason":reason})
+        if plan!=current["plan_code"] or overrides!=(current.get("entitlement_overrides") or {}):
+            platform_audit_write(conn,actor,"brand_entitlements_changed",brand_id,{"before":{"plan_code":current["plan_code"],"overrides":current["entitlement_overrides"]},"after":{"plan_code":plan,"overrides":overrides}})
+        platform_audit_write(conn,actor,"brand_updated",brand_id)
     return dict(row)
 
 def require_brand_admin_for(brand_id: str, x_session_token: str | None):
     staff=get_current_staff(x_session_token)
     if not staff: raise HTTPException(401,"Staff sign-in required")
-    if has_role(staff,"super_admin") or has_role(staff,"brand_admin",brand_id=brand_id):
+    if has_role(staff,"super_admin"): return staff
+    if has_role(staff,"brand_admin",brand_id=brand_id):
+        if DATABASE_URL:
+            with db() as conn:
+                brand=conn.execute("SELECT 1 FROM brands WHERE id=%s AND status='active'",(brand_id,)).fetchone()
+            if not brand: raise HTTPException(403,"Brand is suspended or unavailable")
         return staff
     raise HTTPException(403,"Brand Admin access required")
 
@@ -2635,6 +2704,7 @@ def create_store(payload: dict, x_session_token: str | None = Header(default=Non
         lock_brand_operations(conn, brand_id)
         if not conn.execute("SELECT id FROM brands WHERE id=%s AND status='active'", (brand_id,)).fetchone():
             raise HTTPException(404, "Active brand not found")
+        require_capacity(conn,brand_id,"stores")
         validate_store_change(conn, brand_id, store_id, data)
         try:
             row = conn.execute(
@@ -2662,6 +2732,7 @@ def update_store(store_id: str, payload: dict, x_session_token: str | None = Hea
         if "brand_id" in payload and payload["brand_id"] != current["brand_id"]:
             raise HTTPException(400, "A store cannot move to another brand")
         data = {**dict(current), **payload}
+        if data.get("active") and not current["active"]: require_capacity(conn,current["brand_id"],"stores")
         validate_store_change(conn, current["brand_id"], store_id, data)
         try:
             row = conn.execute(
@@ -2712,6 +2783,8 @@ def dispatch_handoff(payload: dict, x_session_token: str | None = Header(default
     if len(notes) > 1000: raise HTTPException(400, "Handoff notes must be at most 1000 characters")
     with db() as conn, conn.transaction():
         lock_brand_operations(conn, brand_id)
+        brand,policy=brand_policy(conn,brand_id)
+        if brand["status"]!="active" or not policy["features"]["handoffs"]: raise HTTPException(403,"Handoffs are unavailable for this brand")
         destination = conn.execute("SELECT id,name FROM stores WHERE id=%s AND brand_id=%s AND active=TRUE", (destination_id, brand_id)).fetchone()
         if not destination: raise HTTPException(404, "Destination store unavailable in this brand")
         source = conn.execute("SELECT name FROM stores WHERE id=%s AND brand_id=%s AND active=TRUE", (store_id, brand_id)).fetchone()
@@ -2743,6 +2816,8 @@ def act_on_handoff(handoff_id: str, payload: dict, x_session_token: str | None =
     if len(notes) > 1000: raise HTTPException(400, "Handoff notes must be at most 1000 characters")
     with db() as conn, conn.transaction():
         lock_brand_operations(conn, brand_id)
+        brand,policy=brand_policy(conn,brand_id)
+        if brand["status"]!="active" or not policy["features"]["handoffs"]: raise HTTPException(403,"Handoffs are unavailable for this brand")
         row = conn.execute("SELECT * FROM store_handoffs WHERE id=%s FOR UPDATE", (handoff_id,)).fetchone()
         if not row: raise HTTPException(404, "Handoff not found")
         try:
@@ -2797,6 +2872,12 @@ def replace_staff_roles(staff_id: str, payload: dict, x_session_token: str | Non
             if store_id:
                 store=conn.execute("SELECT brand_id FROM stores WHERE id=%s AND active=TRUE",(store_id,)).fetchone()
                 if not store or store["brand_id"]!=brand_id: raise HTTPException(400,"Store must belong to assigned brand")
+        new_brands={a.get("brand_id") for a in assignments if a.get("brand_id") and a.get("active",True)}
+        prior_brands={target["business_id"]} | {r["brand_id"] for r in conn.execute("SELECT DISTINCT brand_id FROM user_role_assignments WHERE user_id=%s AND active=TRUE AND brand_id IS NOT NULL",(staff_id,)).fetchall()}
+        for quota_brand in sorted(new_brands | prior_brands): lock_brand_operations(conn,quota_brand)
+        target=conn.execute("SELECT * FROM staff_users WHERE id=%s FOR UPDATE",(staff_id,)).fetchone()
+        for quota_brand in sorted(new_brands):
+            if target["active"]: require_capacity(conn,quota_brand,"staff",exclude_user=staff_id)
         conn.execute("DELETE FROM user_role_assignments WHERE user_id=%s",(staff_id,))
         saved=[]
         for a in assignments:
@@ -2834,6 +2915,8 @@ def create_staff(payload: dict, x_session_token: str | None = Header(default=Non
     sid=str(uuid.uuid4()); salt=secrets.token_hex(16); pw_hash=hash_password(password,salt)
     if not DATABASE_URL: return {"id":sid,"name":name,"email":email,"role":role,"active":bool(payload.get("active",True))}
     with db() as conn, conn.transaction():
+        lock_brand_operations(conn,business_id)
+        if payload.get("active",True): require_capacity(conn,business_id,"staff",exclude_email=email)
         if not conn.execute("SELECT 1 FROM stores WHERE id=%s AND brand_id=%s AND active=TRUE", (location_id, business_id)).fetchone():
             raise HTTPException(404, "Store not found in this brand")
         try:
@@ -2850,6 +2933,10 @@ def update_staff(staff_id: str, payload: dict, x_session_token: str | None = Hea
     if role is not None and role not in ("owner","manager","counter","processing","driver"): raise HTTPException(400,"Invalid role")
     if not DATABASE_URL: return {"id":staff_id,**payload}
     with db() as conn, conn.transaction():
+        current=conn.execute("SELECT * FROM staff_users WHERE id=%s",(staff_id,)).fetchone()
+        if not current: raise HTTPException(404,"Staff user not found")
+        quota_brands = sorted({current["business_id"]} | {row["brand_id"] for row in conn.execute("SELECT DISTINCT brand_id FROM user_role_assignments WHERE user_id=%s AND active=TRUE AND brand_id IS NOT NULL",(staff_id,)).fetchall()})
+        for quota_brand in quota_brands: lock_brand_operations(conn,quota_brand)
         current=conn.execute("SELECT * FROM staff_users WHERE id=%s FOR UPDATE",(staff_id,)).fetchone()
         if not current: raise HTTPException(404,"Staff user not found")
         validate_staff_target(conn, actor, staff_id)
@@ -2860,6 +2947,8 @@ def update_staff(staff_id: str, payload: dict, x_session_token: str | None = Hea
         if not conn.execute("SELECT 1 FROM stores WHERE id=%s AND brand_id=%s AND active=TRUE", (new_store, current["business_id"])).fetchone():
             raise HTTPException(404, "Store not found in this brand")
         data["location_id"] = new_store
+        if data.get("active") and not current["active"]:
+            for quota_brand in quota_brands: require_capacity(conn,quota_brand,"staff",exclude_user=staff_id,exclude_email=current["email"])
         if password:
             if not 8 <= len(password) <= 1024: raise HTTPException(400,"Password must be between 8 and 1024 characters")
             salt=secrets.token_hex(16); pw_hash=hash_password(password,salt)
@@ -2902,6 +2991,11 @@ def staff_sign_in(payload: dict, request: Request):
     with db() as conn:
         reserve_login(conn, keys)
         with conn.transaction():
+            candidate=conn.execute("SELECT id,business_id FROM staff_users WHERE email=%s AND active=TRUE",(email,)).fetchone()
+            locked_brands=set()
+            if candidate:
+                locked_brands={candidate["business_id"]} | {r["brand_id"] for r in conn.execute("SELECT DISTINCT brand_id FROM user_role_assignments WHERE user_id=%s AND active=TRUE AND brand_id IS NOT NULL",(candidate["id"],)).fetchall()}
+                for brand_id in sorted(locked_brands): lock_brand_operations(conn,brand_id)
             row=conn.execute("SELECT * FROM staff_users WHERE email=%s AND active=TRUE FOR UPDATE",(email,)).fetchone()
             if not row or not row.get("password_hash"):
                 hash_password(password, "unrecognized-account")
@@ -2910,9 +3004,13 @@ def staff_sign_in(payload: dict, request: Request):
                 raise HTTPException(401,"Invalid email or password")
             if not row["password_hash"].startswith("pbkdf2_sha256$"):
                 conn.execute("UPDATE staff_users SET password_hash=%s WHERE id=%s AND password_hash=%s", (hash_password(password,row["password_salt"]),row["id"],row["password_hash"]))
+            active_brand,active_store=login_scope(conn,sys.modules[__name__],row)
+            if not has_role(row,"super_admin") and active_brand not in locked_brands:
+                raise HTTPException(409,"Account access changed during sign-in; try again")
+            row["active_brand_id"]=active_brand; row["active_store_id"]=active_store
             token=secrets.token_urlsafe(32)
-            conn.execute("INSERT INTO staff_sessions (token,staff_id,active_brand_id,active_store_id) VALUES (%s,%s,%s,%s)",(token,row["id"],row.get("business_id") or "fabclean",row.get("location_id") or "main"))
-    staff=dict(row); staff.pop("password_hash",None); staff.pop("password_salt",None); staff["assignments"]=get_user_assignments(staff["id"])
+            conn.execute("INSERT INTO staff_sessions (token,staff_id,active_brand_id,active_store_id) VALUES (%s,%s,%s,%s)",(token,row["id"],active_brand,active_store))
+    staff=dict(row); staff.pop("password_hash",None); staff.pop("password_salt",None); staff["assignments"]=row["assignments"]
     record_login_audit(staff, request)
     return {"staff":staff,"token":token,"permissions":sorted(effective_permissions(staff))}
 
@@ -3232,7 +3330,7 @@ def ai_status(x_session_token: str | None = Header(default=None)):
     }
 
 def ai_enabled():
-    return bool(get_settings_value().get("ai_assistance_enabled", True))
+    return feature_allowed("ai") and bool(get_settings_value().get("ai_assistance_enabled", True))
 
 def require_ai(permission: str, x_session_token: str | None):
     staff = require_permission(permission, x_session_token)
@@ -3386,3 +3484,6 @@ def dashboard(x_session_token: str | None = Header(default=None)):
         "average_order_value": round(sum(float(o.get("total",0)) for o in paid)/len(paid),2) if paid else 0,
         "database": "memory",
     }
+
+
+register_platform_routes(app, sys.modules[__name__])
