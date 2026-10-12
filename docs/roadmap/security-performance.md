@@ -5,6 +5,7 @@ Priority: P1 — current sequential roadmap item.
 PR: https://github.com/mahendraek/FabClean-SaaS/pull/6
 Implementation branch: `codex/pr-6-security-performance`, based on accepted main `d42f80f`.
 Prepared and implemented: 12 October 2026.
+Implementation commit: `9ee0362`; planning ancestry merge: `19c7742` (identical implementation tree). Published by normal push to `roadmap/security-performance` and the implementation branch; PR #6 Git head independently verified. GitHub title/body editing remains Forbidden.
 
 ## Delivered scope
 
@@ -18,7 +19,7 @@ See [implementation and release review](../PR6_SECURITY_RELEASE.md), [performanc
 - 19 frontend unit tests pass; TypeScript has zero diagnostics; Expo exports 27 routes. Clean npm ci from the new lockfile succeeds.
 - Desktop/mobile-web browser checks pass context switching, sign-out/relogin, rate-limit recovery and real local API custody transitions/persistence. Reload checks wait for hydrated authenticated context.
 - Local load: 160 requests, eight workers, 50 seeded orders, zero errors. Throughput approximately 43 to 66 requests/second; per-endpoint p95 meets the documented local budget.
-- CI workflow and Render checksPass configuration are committed configuration. Hosted CI execution, main-branch required-check enforcement and existing Render dashboard settings have not been verified or changed; GitHub API access returns Forbidden.
+- CI workflow and Render checksPass configuration are committed configuration. Hosted CI execution, main-branch required-check enforcement and existing Render services were read-only verified as auto-deploying on commit, and their settings have not been changed; GitHub API access returns Forbidden.
 
 ## Acceptance and boundaries
 

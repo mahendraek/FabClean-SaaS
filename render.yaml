@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: fabclean-api
+    name: fabclean-saas-api
     runtime: python
     rootDir: backend
     buildCommand: pip install -r requirements.txt
@@ -18,7 +18,7 @@ services:
     healthCheckPath: /api/health
 
   - type: web
-    name: fabclean-web
+    name: fabclean-saas-web
     runtime: static
     rootDir: frontend
     buildCommand: npm ci && npx expo export -p web
