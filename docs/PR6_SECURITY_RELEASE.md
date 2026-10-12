@@ -2,7 +2,7 @@
 
 12 October 2026. Implementation branch: `codex/pr-6-security-performance`, based on accepted main `d42f80f`. Implementation commit: `9ee0362`. Planning ancestry retained by `19c7742`; normal pushes update both the implementation branch and `roadmap/security-performance`. The PR #6 Git head was verified at `19c7742` before this publication-record follow-up. GitHub metadata editing remains Forbidden.
 
-Awaiting review; no merge, deployment or production settings changes are authorized by this development request.
+Accepted with explicit user approval on 12 October 2026, merged into main at `dd031a7`, and manually deployed to both Render services. Production settings and smoke checks are recorded in [deployment status](DEPLOYMENT_STATUS.md). The earlier development request did not authorize deployment; the later merge/deploy instruction does.
 
 ## Delivered behavior
 
@@ -39,12 +39,12 @@ Load artifacts and measured results are in [the performance report](performance/
 
 Native-device execution remains outstanding. Browser mobile emulation does not establish native acceptance. On staging, test iOS and Android sign-in/restart persistence, expiry and sign-out, store switching/cancel/relogin, background resume, camera permission deny/retry for garment scanning/photos, and handoff confirmation/return after a network failure. Use staging fixtures and check that no secrets appear in logs.
 
-## Before merge/deployment
+## Release procedure and applied fallback
 
 1. Review this implementation and passing validation. The GitHub API is Forbidden in this environment; Git refs alone do not establish review decisions or hosted CI results.
 2. Confirm GitHub Actions runs `PR validation / validation`; configure it as a required main-branch check through repository settings when permitted. The workflow uses PostgreSQL 16 and explicitly creates a NOSUPERUSER/NOBYPASSRLS database-owner role. Hosted execution and branch-protection enforcement have not been verified here.
 3. Apply/verify the existing Render API service settings: APP_ENV=production, CORS_ALLOWED_ORIGINS=https://fabclean-saas-web.onrender.com (append approved custom origins as needed), existing secret DATABASE_URL with a non-bypass role, DB_POOL_MAX_SIZE=8, and Uvicorn with --no-access-log. Keep aggregate worker-count × pool-size within the database connection budget. Do not put secrets in render.yaml.
-4. Render blueprint configuration now uses autoDeployTrigger=checksPass for both services. A read-only Render API check on 12 October verified that both existing services track main with autoDeploy=yes and autoDeployTrigger=commit. Change/verify them to checksPass before merging; editing a blueprint file does not update an unmanaged service. No settings were changed by this PR development task. Web build uses npm ci with Node 24 and the actual deployed API URL. If remote gates cannot be verified, turn off automatic deployment and deploy only a reviewed commit after the complete local validation script passes and explicit user approval is obtained.
+4. Render blueprint configuration now uses autoDeployTrigger=checksPass for both services. A read-only Render API check on 12 October verified that both existing services track main with autoDeploy=yes and autoDeployTrigger=commit. Change/verify them to checksPass before merging; editing a blueprint file does not update an unmanaged service. During the subsequent authorized release, both services were switched to automatic deployment off and manually deployed after verified local validation; production directory/environment/build settings were applied. Web build uses npm ci with Node 24 and the actual deployed API URL. If remote gates cannot be verified, turn off automatic deployment and deploy only a reviewed commit after the complete local validation script passes and explicit user approval is obtained.
 5. After approval and merge, deploy both services and verify exact live application commit, health, authentication/CORS and the published bundle. Keep production operational data untouched during smoke checks. Native and notification-provider staging acceptance remain separate.
 
 No native devices, production load tests, production database inspection or automatic remote guard enforcement is claimed. Scheduling availability remains the existing informational workflow; this PR adds no capacity-reservation policy. No scopes from PR #7–#12 are implemented.

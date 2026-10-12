@@ -1,6 +1,6 @@
 # PR #6 implementation plan
 
-Prepared: 12 October 2026. Status: implemented and validated; awaiting review. See [implementation and release review](PR6_SECURITY_RELEASE.md). Base: accepted main `d42f80f`, with live application merge `50eeb3d`. Scope: [security, testing and performance](roadmap/security-performance.md).
+Prepared: 12 October 2026. Status: accepted, merged at `dd031a7` and deployed. See [implementation and release review](PR6_SECURITY_RELEASE.md). Base: accepted main `d42f80f`, with live application merge `50eeb3d`. Scope: [security, testing and performance](roadmap/security-performance.md).
 
 The pre-PR #6 fixes already provide server sign-out, stale-store request rejection, consistent assembly guards and a clean TypeScript baseline. Preserve those behaviors rather than rebuilding them.
 
