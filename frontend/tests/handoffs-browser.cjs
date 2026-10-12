@@ -34,6 +34,7 @@ const server = http.createServer((req,res) => {
           await route.fulfill({ response, headers: { ...response.headers(), 'access-control-allow-origin': '*' } });
         });
         await page.goto(base + '/handoffs');
+        await page.getByText(`Browser Test Brand · ${actor === 'source' ? 'Market Street Store' : 'Central Plant'}`, { exact: true }).waitFor();
         await page.getByText('New handoff', { exact: true }).waitFor();
         return page;
       }
@@ -62,7 +63,9 @@ const server = http.createServer((req,res) => {
       await source.getByText('Confirm handoff', { exact: true }).click();
       await source.getByText('Closed handoffs', { exact: true }).click();
       await source.getByText('Returned to origin', { exact: true }).first().waitFor();
-      await source.reload(); await source.getByText('Closed handoffs', { exact: true }).click();
+      await source.reload();
+      await source.getByText('Browser Test Brand · Market Street Store', { exact: true }).waitFor();
+      await source.getByText('Closed handoffs', { exact: true }).click();
       await source.getByText('Returned to origin', { exact: true }).first().waitFor();
       assert.deepEqual(errors, []);
       await source.screenshot({ path: process.env.HANDOFF_SCREENSHOT_DIR ? path.join(process.env.HANDOFF_SCREENSHOT_DIR, `handoffs-${mobile ? 'mobile' : 'desktop'}.png`) : `/tmp/handoffs-${mobile ? 'mobile' : 'desktop'}.png`, fullPage: true });

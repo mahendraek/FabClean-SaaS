@@ -1,6 +1,6 @@
 # FabClean development tracker
 
-Updated: 9 October 2026. This is the canonical work queue for `mahendraek/FabClean-SaaS`.
+Updated: 12 October 2026. This is the canonical work queue for `mahendraek/FabClean-SaaS`.
 Develop one item at a time. Keep future scopes in the backlog; do not implement or merge another roadmap PR as part of the current item.
 
 ## Current work
@@ -17,7 +17,9 @@ The implementation adds forced PostgreSQL row-level security on 21 operational t
 
 **Current maintenance:** [Pre-PR #6 audit and fixes](PRE_PR6_AUDIT.md) on `codex/pre-pr6-fixes`, based on main `8e783a7`. Session revocation, stale-store write protection, consistent assembly guards and all 34 TypeScript diagnostics are fixed. Validation: 42 backend tests, 15 frontend unit tests, zero TypeScript diagnostics, 27-route export and desktop/mobile browser checks. Accepted and merged into main at `50eeb3d` with explicit user authorization; see [deployment status](DEPLOYMENT_STATUS.md).
 
-**Next:** PR #6 — security, testing and performance. Rebase each future implementation on the accepted predecessor so security behavior and tests remain intact.
+**Current: PR #6 — security, testing and performance:** implemented on `codex/pr-6-security-performance`, based on accepted main `d42f80f`; implementation `9ee0362` with planning ancestry merge `19c7742`; validated, published to `roadmap/security-performance` and awaiting review. PR #6 Git head was independently verified in that ancestry; GitHub metadata editing remains Forbidden. Shared login throttling/password/session hardening, production CORS, safe logs, isolated pooling, atomic operational/creation writes, recurring conflicts, frontend failure recovery and CI/release configuration are complete. Validation: 61 backend tests, 19 frontend tests, zero TypeScript diagnostics, 27-route export, desktop/mobile browser flows and a local load baseline. See [release review](PR6_SECURITY_RELEASE.md) and [performance evidence](performance/PR6_BASELINE.md). Hosted CI/review state and branch-protection enforcement remain unverified because GitHub API access is Forbidden. A read-only Render check confirms both services currently auto-deploy on commit; checksPass must be applied/verified before merging. Not merged or deployed.
+
+**Next after PR #6 acceptance:** PR #7 — platform administration/onboarding. No development started on future items.
 
 ## Sequential PR queue
 
@@ -26,7 +28,7 @@ The implementation adds forced PostgreSQL row-level security on 21 operational t
 | 1 | [#4](https://github.com/mahendraek/FabClean-SaaS/pull/4) | P0 | [Tenant/store data isolation](roadmap/tenant-data-isolation.md) | Merged at `971f2bc`; Render live at `a800a73` | Existing context persistence |
 | 2 | [#3](https://github.com/mahendraek/FabClean-SaaS/pull/3) | P0 | [Shared brand/store switcher](roadmap/brand-store-experience.md) | Merged at `cd99661`; Render live and smoke checks passed | #4 |
 | 3 | [#5](https://github.com/mahendraek/FabClean-SaaS/pull/5) | P1 | [Store hierarchy and operational handoffs](roadmap/store-hierarchy.md) | Merged at `9753435`; Render live and smoke checks passed | #4, #3 |
-| 4 | [#6](https://github.com/mahendraek/FabClean-SaaS/pull/6) | P1 | [Security, testing and performance](roadmap/security-performance.md) | Planned | #4, #3, #5 |
+| 4 | [#6](https://github.com/mahendraek/FabClean-SaaS/pull/6) | P1 | [Security, testing and performance](roadmap/security-performance.md) | Validated; awaiting review | #4, #3, #5 |
 | 5 | [#7](https://github.com/mahendraek/FabClean-SaaS/pull/7) | P1 | [Platform administration/onboarding](roadmap/platform-management.md) | Planned | #4, #6 |
 | 6 | [#8](https://github.com/mahendraek/FabClean-SaaS/pull/8) | P2 | [Brand defaults/store overrides](roadmap/configuration-inheritance.md) | Planned | #4, #5, #7 |
 | 7 | [#9](https://github.com/mahendraek/FabClean-SaaS/pull/9) | P2 | [Location-aware taxes](roadmap/location-taxes.md) | Planned | #8 |
@@ -60,7 +62,7 @@ These items remain required by [the functional specification](FUNCTIONAL_SPEC_V1
 | Phase 2 — messaging | SMS/WhatsApp/push delivery, consent and preferences; coordinate email/SMS receipts with #11. |
 | Phase 2 — operations | Staff clock-in/out, QuickBooks/Xero and stronger multi-location operations. |
 | Phase 3+ | Washer/dryer integrations and telemetry, payroll, smart lockers, advanced plant management, automated assembly, complex multi-store management, advanced marketing automation, AI receptionist and RFID. |
-| Engineering follow-ups | Frontend TypeScript baseline fixed in pre-PR #6 maintenance (accepted and merged); native iOS/Android validation; migration tooling and CI deployment checks; session/load/concurrency testing under #6. |
+| Engineering follow-ups | Frontend TypeScript baseline fixed in pre-PR #6 maintenance (accepted and merged); native iOS/Android validation; hosted CI/required-check and Render gate verification; larger staging load and notification-provider acceptance. PR #6 includes local session/load/concurrency checks and migration CI tooling. |
 
 ## How to maintain the queue
 
