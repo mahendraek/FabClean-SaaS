@@ -27,7 +27,7 @@ jobs:
       FABCLEAN_TEST_DATABASE_URL: postgresql://fabclean_test:local-ci-only@127.0.0.1:5432/fabclean_test
       # The validation script changes XDG_CACHE_HOME; browser install and launch
       # must therefore use an explicit shared directory throughout the job.
-      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/fabclean-playwright
+      PLAYWRIGHT_BROWSERS_PATH: /tmp/fabclean-playwright
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
