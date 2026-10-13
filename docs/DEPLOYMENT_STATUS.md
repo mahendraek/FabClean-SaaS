@@ -1,16 +1,23 @@
 # Render deployment status
 
-Updated: 12 October 2026.
+Updated: 13 October 2026.
 
-## PR #9 — merged; deployment pending
+## Current live release — PR #9
 
-On 12 October 2026, the user explicitly authorized merge and deployment. PR #9 was merged into main at `9e68ce3d43eea0ea12a1fc9b1d2d36bd6a70a28f`; authenticated Git independently verified remote main. The merged tree exactly matches validated head `fa45909`: 119 backend tests without skips, 26 frontend tests, clean TypeScript, 30-route export, five desktop/mobile browser suites and zero-error load validation. See [implementation evidence](PR9_IMPLEMENTATION.md).
+The user explicitly authorized merge and deployment. PR #9 was merged into main at `9e68ce3d43eea0ea12a1fc9b1d2d36bd6a70a28f`; authenticated Git independently verified remote main. The merged tree exactly matches validated head `fa45909`: 119 backend tests without skips, 26 frontend tests, clean TypeScript, 30-route export, five desktop/mobile browser suites and zero-error load validation. See [implementation evidence](PR9_IMPLEMENTATION.md).
 
-Deployment is blocked in the current environment: no Render credential binding is present, and HTTPS CONNECT requests to `api.render.com` and the API public URL return proxy 403. No deployment was triggered. Current live service state is unverified; PR #8 below is the last confirmed deployment. GitHub API hosted review/merge/CI metadata also remains Forbidden; the main Git merge is independently verified.
+The earlier credential/network blocker was resolved after the user updated the cloud environment. Authenticated Render API confirms both deployments **live** at the exact approved merge `9e68ce3`. Existing settings, service roots, application credentials and automatic deployment off were preserved. The Render deployment key is bound only to `api.render.com`; it is not an application secret.
 
-The saved environment draft adds `api.render.com`, `fabclean-saas-api.onrender.com`, and `fabclean-saas-web.onrender.com` and declares `RENDER_API_KEY` for the Render API. Enter the credential securely in environment settings, save the changes and publish the environment, then retry authenticated Render access. Deploy both existing services to `9e68ce3` and verify their exact live commit, API health/authentication/CORS, OpenAPI tax routes and the fresh web tax screen/bundle. Do not use production fixtures or operational writes for smoke checks.
+| Service | Public URL | Service ID | Live deployment | Finished (India time) |
+| --- | --- | --- | --- | --- |
+| API | https://fabclean-saas-api.onrender.com | `srv-db3nmqij9qps738d2qkg` | `dep-db6sb9om7kps73b6bqk0` | 2026-10-13 11:17:35 IST |
+| Web | https://fabclean-saas-web.onrender.com | `srv-db3nmv60tbcc73895n1g` | `dep-db6sba3ncjis73em6og0` | 2026-10-13 11:18:34 IST |
 
-## Last confirmed live release — PR #8
+Public checks pass: API health reports PostgreSQL; published OpenAPI contains tax rules, rule end/void, estimates and financial tax reporting. Unauthenticated rules/estimates/reporting return 401 with approved-origin CORS and no-store. Tax-rule POST preflight accepts the web origin and rejects an untrusted origin. The web homepage and `/taxes` return 200; freshly fetched JavaScript contains `/taxes/rules`, `/taxes/estimate` and `/financial/taxes`.
+
+No production fixtures, authentication attempts, tax-rule writes, refunds or load traffic were used. Production migration rows/RLS and authenticated tax execution were not directly inspected; successful API startup and local migration/integration tests supply the current evidence. Native devices and actual printers remain untested. GitHub hosted CI/review metadata remains unverified. This documentation-only follow-up does not change the live application commit.
+
+## Previous release — PR #8 (historical evidence)
 
 The user explicitly authorized merge and deployment. PR #8 was merged into main at `7b193dbb7f3c148acf2c556947f7528759d1fe23`, independently verified through authenticated Git. Implementation `744947a`, planning merge `4590250`, validated compatibility fix `7a3696d` and published head `7ed2213` are retained in the merge ancestry. The merged tree exactly matches the locally validated branch. GitHub hosted CI/review/open/closed metadata remains unverified because API access is Forbidden; this release used the explicitly approved local-validation/manual-deployment fallback.
 
