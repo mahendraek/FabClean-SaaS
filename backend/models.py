@@ -106,6 +106,8 @@ class OrderCreate(BaseModel):
     delivery_slot_label: str = ""
     service_address: str = ""
     service_postal_code: str = ""
+    service_latitude: Optional[float] = Field(default=None, ge=-85.05112878, le=85.05112878, allow_inf_nan=False, strict=True)
+    service_longitude: Optional[float] = Field(default=None, ge=-180, le=180, allow_inf_nan=False, strict=True)
     delivery_fee: float = 0
     promo_code: str = ""
     offer_id: Optional[str] = None
@@ -144,6 +146,9 @@ class Order(BaseModel):
     delivery_slot_label: str = ""
     service_address: str = ""
     service_postal_code: str = ""
+    service_latitude: Optional[float] = None
+    service_longitude: Optional[float] = None
+    coverage_snapshot: Optional[dict] = None
     delivery_fee: float = 0
     promo_code: str = ""
     offer_id: Optional[str] = None

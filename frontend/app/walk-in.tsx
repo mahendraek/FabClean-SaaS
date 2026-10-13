@@ -11,6 +11,7 @@ import { downloadRaw, generateTspl, generateZpl, openLabelPrint, profileFromSett
 import { printOrderReceipt } from "@/src/receipt";
 import { Code128 } from "@/src/Code128";
 import { CalendarDatePicker } from "@/src/CalendarDatePicker";
+import { CoverageAddress, AddressPin } from "@/src/CoverageAddress";
 
 type Service={id:string;name:string;category:string;base_price:number;unit_label:string;description?:string};
 type Customer={id:string;name:string;phone:string;email?:string;order_count?:number;lifetime_value?:number;reward_points?:number;referral_code?:string};
@@ -59,6 +60,7 @@ export default function WalkIn(){
   const [successSettings,setSuccessSettings]=useState<any>({});
   const [capabilities,setCapabilities]=useState<any>({pickup_enabled:false,delivery_enabled:false,offers_enabled:true});
   const [successGarments,setSuccessGarments]=useState<any[]>([]);
+  const [addressPin,setAddressPin]=useState<AddressPin|null>(null);
 
   useEffect(()=>{
     Promise.all([
@@ -167,6 +169,7 @@ export default function WalkIn(){
     setSaving(true);setErr("");
     try{
       if(taxEstimate.busy||taxEstimate.error)throw new Error(taxEstimate.error||"Wait for the tax estimate");
+      if(fulfillmentType!=='walk_in'&&(!addressPin||addressPin.result.eligible===false))throw new Error('Confirm the service address pin and check coverage first');
       const o=await api.post<any>("/orders",{
         customer_id:selectedCustomer?.id||null,customer_name:name.trim(),customer_phone:phone.trim(),customer_email:email.trim(),
         fulfillment_type:fulfillmentType,items:lines,notes,discount:promoDiscount,tax:0,payment_method:"cash",payment_status:paymentStatus,
@@ -180,7 +183,9 @@ export default function WalkIn(){
         delivery_date:needsDelivery?deliveryDate:"",
         delivery_slot_id:needsDelivery?deliverySlotId||null:null,
         delivery_slot_label:needsDelivery&&selectedDeliverySlot?selectedDeliverySlot.name+" · "+selectedDeliverySlot.start_time+"-"+selectedDeliverySlot.end_time:"",
-        service_address:"",service_postal_code:"",delivery_fee:0,
+        service_address:fulfillmentType==='walk_in'?'':addressPin?.address||'',service_postal_code:'',delivery_fee:0,
+        service_latitude:fulfillmentType==='walk_in'?null:addressPin?.latitude,
+        service_longitude:fulfillmentType==='walk_in'?null:addressPin?.longitude,
         promo_code:promoCode.trim().toUpperCase()
       });
       setCreated(o);
@@ -316,6 +321,7 @@ export default function WalkIn(){
         </Pressable>)}
       </View>
       {fulfillmentType!=="walk_in"?<View style={{marginTop:12}}>
+        <CoverageAddress fulfillment={fulfillmentType} onChange={setAddressPin}/>
         <Text style={s.helper}>{fulfillmentType==="pickup_only"?"Schedule pickup. Return collection will be Walk-In.":fulfillmentType==="delivery_only"?"Pickup is Walk-In. Schedule only the return delivery.":"Schedule both pickup and return delivery. Coverage and slot length are managed by the administrator."}</Text>
         <View style={s.scheduleGrid}>
           {needsPickup?<View style={s.scheduleBox}>

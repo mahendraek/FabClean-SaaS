@@ -24,6 +24,7 @@ export default function RootLayout() {
         <Stack.Screen name="admin" />
         <Stack.Screen name="configuration" />
         <Stack.Screen name="taxes" />
+        <Stack.Screen name="coverage" />
         <Stack.Screen name="staff" />
         <Stack.Screen name="platform-admin" />
         <Stack.Screen name="brand-stores" />
