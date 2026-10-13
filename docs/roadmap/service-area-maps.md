@@ -5,6 +5,7 @@ Priority: P2 — current sequential roadmap item.
 Implementation branch: `codex/pr-10-service-area-maps`, based on accepted main `be01ff3`.
 PR: https://github.com/mahendraek/FabClean-SaaS/pull/10
 Implemented: 13 October 2026.
+Publication: implementation `b179ec0`, planning merge `1e9147b`; both branch refs and PR #10 head verified at `1e9147b`. GitHub title/body editing returned Forbidden; review details are retained in the implementation notes.
 
 ## Delivered scope
 
