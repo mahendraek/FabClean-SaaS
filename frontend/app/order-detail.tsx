@@ -17,6 +17,7 @@ type Order={
   id:string;order_number:string;barcode_value:string;status:string;total:number;subtotal:number;
   discount:number;tax:number;tax_snapshot?:any;payment_status:string;payment_method:string;notes:string;
   due_at?:string|null;pricing_status?:string;
+  coverage_snapshot?:any;
   fulfillment_type?:string;service_area_name?:string;scheduled_slot_label?:string;service_address?:string;service_postal_code?:string;delivery_fee?:number;pickup_date?:string;pickup_slot_label?:string;delivery_date?:string;delivery_slot_label?:string;
   customer:{name:string;phone:string;email?:string};items:Line[];
 };
@@ -155,7 +156,7 @@ export default function OrderDetail(){
       </View>
     </View>
 
-    {order.fulfillment_type&&order.fulfillment_type!=="walk_in"?<View style={s.panel}><Text style={s.panelTitle}>Pickup / Delivery</Text><Text style={s.meta}>Pickup: {order.fulfillment_type==="delivery_only"?"Walk-In":(order.pickup_date||"—")+(order.pickup_slot_label?" · "+order.pickup_slot_label:"")}</Text><Text style={s.meta}>Delivery: {order.fulfillment_type==="pickup_only"?"Walk-In":(order.delivery_date||"—")+(order.delivery_slot_label?" · "+order.delivery_slot_label:"")}</Text><Pressable onPress={()=>router.push("/pickup-schedule")}><Text style={s.aiLink}>Open Schedule</Text></Pressable></View>:null}
+    {order.fulfillment_type&&order.fulfillment_type!=="walk_in"?<View style={s.panel}><Text style={s.panelTitle}>Pickup / Delivery</Text><Text style={s.meta}>{order.service_address||"Service address not recorded"}</Text>{order.coverage_snapshot&&<Text style={s.meta}>{"Coverage confirmed at booking · "+order.coverage_snapshot.distance+" "+order.coverage_snapshot.unit+" straight-line distance"}</Text>}<Text style={s.meta}>Pickup: {order.fulfillment_type==="delivery_only"?"Walk-In":(order.pickup_date||"—")+(order.pickup_slot_label?" · "+order.pickup_slot_label:"")}</Text><Text style={s.meta}>Delivery: {order.fulfillment_type==="pickup_only"?"Walk-In":(order.delivery_date||"—")+(order.delivery_slot_label?" · "+order.delivery_slot_label:"")}</Text><Pressable onPress={()=>router.push("/pickup-schedule")}><Text style={s.aiLink}>Open Schedule</Text></Pressable></View>:null}
 
     <View style={s.panel}>
       <Text style={s.panelTitle}>Order lifecycle</Text>

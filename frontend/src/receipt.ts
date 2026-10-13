@@ -129,6 +129,7 @@ export async function printOrderReceipt(orderId:string){
     </div>
 
     <div class="summary">
+      ${order.coverage_snapshot?`<div class="sumrow"><span>Service coverage confirmed</span><span>${esc(order.coverage_snapshot.distance)} ${esc(order.coverage_snapshot.unit)}</span></div>`:""}
       <div class="sumrow"><span>Subtotal</span><span>${money(order.subtotal)}</span></div>
       ${Number(order.discount||0)?`<div class="sumrow"><span>Discount</span><span>-${money(order.discount)}</span></div>`:""}
       ${(order.tax_snapshot?.breakdown||[]).map((row:any)=>`<div class="sumrow"><span>${esc(row.jurisdiction)} (${esc(row.rate)}%)</span><span>${money(row.amount)}</span></div>`).join("")}

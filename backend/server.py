@@ -1,5 +1,6 @@
 import taxes
 import configuration
+import coverage
 import base64
 import json
 import os
@@ -239,6 +240,7 @@ def init_db():
             install_platform(conn)
             configuration.install(conn)
             taxes.install(conn)
+            coverage.install(conn)
             return
         conn.execute("""
             CREATE TABLE IF NOT EXISTS app_settings (
@@ -740,6 +742,7 @@ def init_db():
             install_platform(conn)
             configuration.install(conn)
             taxes.install(conn)
+            coverage.install(conn)
 
 @app.on_event("startup")
 def startup():
@@ -1834,6 +1837,7 @@ def create_order(payload: OrderCreate, x_session_token: str | None = Header(defa
     if payload.quick_dropoff and payload.bag_count < 1:
         raise HTTPException(400, "Quick drop-off requires at least one bag")
     validate_order_references(payload.model_dump(), x_session_token)
+    coverage_snapshot=coverage.validate_order(sys.modules[__name__],payload.model_dump())
     order_id = str(uuid.uuid4())
     if DATABASE_URL:
         with db() as conn:
@@ -1949,6 +1953,9 @@ def create_order(payload: OrderCreate, x_session_token: str | None = Header(defa
         delivery_slot_label=payload.delivery_slot_label,
         service_address=payload.service_address,
         service_postal_code=payload.service_postal_code,
+        service_latitude=payload.service_latitude,
+        service_longitude=payload.service_longitude,
+        coverage_snapshot=coverage_snapshot,
         delivery_fee=delivery_fee,
         promo_code=payload.promo_code.strip().upper() if payload.promo_code else "",
         offer_id=applied_offer.get("id") if applied_offer else None,
@@ -2122,9 +2129,11 @@ def update_order(order_id: str, payload: dict, x_session_token: str | None = Hea
         "due_at", "pricing_status", "quick_dropoff", "bag_count", "status",
         "service_area_id", "service_area_name", "scheduled_slot_id", "scheduled_slot_label",
         "pickup_date", "pickup_slot_id", "pickup_slot_label", "delivery_date", "delivery_slot_id", "delivery_slot_label",
-        "service_address", "service_postal_code", "delivery_fee", "fulfillment_type"
+        "service_address", "service_postal_code", "service_latitude", "service_longitude", "delivery_fee", "fulfillment_type"
     }
     updates = {k: v for k, v in payload.items() if k in allowed}
+    for key in ('service_latitude','service_longitude'):
+        if key in updates and updates[key] is not None:coverage.coordinate(updates[key],key=='service_latitude')
     validate_order_references(updates, x_session_token)
     if not updates:
         raise HTTPException(400, "No supported order fields supplied")
@@ -2139,6 +2148,8 @@ def update_order(order_id: str, payload: dict, x_session_token: str | None = Hea
             if any(r.get('transaction_type')=='refund' for r in rows):raise HTTPException(409,'Pricing cannot change after a refund')
         for key, value in updates.items():
             order[key] = value
+        if any(order.get(key)!=before.get(key) for key in ('service_address','service_latitude','service_longitude','fulfillment_type')):
+            order['coverage_snapshot']=coverage.validate_order(sys.modules[__name__],order)
         items = order.get("items", [])
         base_barcode = order.get("barcode_value", order.get("order_number", "").replace("-", ""))
         for index, item in enumerate(items, 1):
@@ -2685,6 +2696,8 @@ def lock_brand_operations(conn, brand_id):
 
 
 def validate_store_change(conn, brand_id, store_id, data):
+    if (data.get('latitude') is None)!=(data.get('longitude') is None):raise HTTPException(400,'Supply both store coordinates or leave both blank')
+    if data.get('latitude') is not None:coverage.point({key:data[key] for key in ('latitude','longitude')})
     if not isinstance(data.get("store_type", "regular"), str) or data.get("store_type", "regular") not in STORE_TYPES:
         raise HTTPException(400, "Invalid store type")
     if not all(isinstance(data.get(key), str) and data[key].strip() for key in ("name", "store_code")):
@@ -3095,6 +3108,7 @@ def create_customer_subscription(customer_id: str, payload: dict, x_session_toke
     get_customer(customer_id,x_session_token)
     validate_order_references(payload, x_session_token)
     require_capability("subscriptions_enabled", "Subscriptions")
+    coverage.subscription_pin(payload)
     sid=str(uuid.uuid4()); start=str(payload.get("start_date") or datetime.now(timezone.utc).date().isoformat())
     if not DATABASE_URL:
         if payload.get("plan_id") not in memory_catalogs["subscription_plans"]:
@@ -3103,7 +3117,7 @@ def create_customer_subscription(customer_id: str, payload: dict, x_session_toke
     with db() as conn:
         plan=conn.execute("SELECT * FROM subscription_plans WHERE id=%s AND active=TRUE",(payload.get("plan_id"),)).fetchone()
         if not plan: raise HTTPException(400,"Subscription plan is not available")
-        row=conn.execute("INSERT INTO customer_subscriptions (id,customer_id,plan_id,status,start_date,next_pickup_date,service_area_id,scheduled_slot_id,service_address,service_postal_code) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *",(sid,customer_id,payload.get("plan_id"),"active",start,payload.get("next_pickup_date") or start,payload.get("service_area_id"),payload.get("scheduled_slot_id"),str(payload.get("service_address","")),str(payload.get("service_postal_code","")))).fetchone()
+        row=conn.execute("INSERT INTO customer_subscriptions (id,customer_id,plan_id,status,start_date,next_pickup_date,service_area_id,scheduled_slot_id,service_address,service_postal_code,service_latitude,service_longitude) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *",(sid,customer_id,payload.get("plan_id"),"active",start,payload.get("next_pickup_date") or start,payload.get("service_area_id"),payload.get("scheduled_slot_id"),str(payload.get("service_address","")),str(payload.get("service_postal_code","")),payload.get("service_latitude"),payload.get("service_longitude"))).fetchone()
     return dict(row)
 
 @app.put("/api/subscriptions/{subscription_id}")
@@ -3112,13 +3126,17 @@ def update_customer_subscription(subscription_id: str, payload: dict, x_session_
     require_capability("subscriptions_enabled", "Subscriptions")
     validate_order_references(payload, x_session_token)
     if not DATABASE_URL:
-        allowed = {k: v for k, v in payload.items() if k in ("status", "next_pickup_date", "service_area_id", "scheduled_slot_id", "service_address", "service_postal_code")}
+        allowed = {k: v for k, v in payload.items() if k in ("status", "next_pickup_date", "service_area_id", "scheduled_slot_id", "service_address", "service_postal_code", "service_latitude", "service_longitude")}
+        current=memory_catalogs['customer_subscriptions'].get(subscription_id)
+        if not current:raise HTTPException(404,'Subscription not found')
+        coverage.subscription_pin({**current,**allowed})
         return save_memory_record("customer_subscriptions", {**allowed, "id": subscription_id}, updating=True)
     with db() as conn:
         current=conn.execute("SELECT * FROM customer_subscriptions WHERE id=%s",(subscription_id,)).fetchone()
         if not current: raise HTTPException(404,"Subscription not found")
         data=dict(current); data.update(payload)
-        row=conn.execute("UPDATE customer_subscriptions SET status=%s,next_pickup_date=%s,service_area_id=%s,scheduled_slot_id=%s,service_address=%s,service_postal_code=%s,updated_at=NOW() WHERE id=%s RETURNING *",(data.get("status","active"),data.get("next_pickup_date"),data.get("service_area_id"),data.get("scheduled_slot_id"),data.get("service_address",""),data.get("service_postal_code",""),subscription_id)).fetchone()
+        coverage.subscription_pin(data)
+        row=conn.execute("UPDATE customer_subscriptions SET status=%s,next_pickup_date=%s,service_area_id=%s,scheduled_slot_id=%s,service_address=%s,service_postal_code=%s,service_latitude=%s,service_longitude=%s,updated_at=NOW() WHERE id=%s RETURNING *",(data.get("status","active"),data.get("next_pickup_date"),data.get("service_area_id"),data.get("scheduled_slot_id"),data.get("service_address",""),data.get("service_postal_code",""),data.get("service_latitude"),data.get("service_longitude"),subscription_id)).fetchone()
     return dict(row)
 
 @app.get("/api/subscriptions/upcoming")
@@ -3174,6 +3192,8 @@ def generate_subscription_order(subscription_id: str, x_session_token: str | Non
         scheduled_slot_id=sub.get("scheduled_slot_id") if has_schedule else None,
         service_address=sub.get("service_address","") if has_schedule else "",
         service_postal_code=sub.get("service_postal_code","") if has_schedule else "",
+        service_latitude=sub.get("service_latitude") if has_schedule else None,
+        service_longitude=sub.get("service_longitude") if has_schedule else None,
     )
     order=create_order(payload,x_session_token)
     order_data=order.model_dump(mode="json") if hasattr(order,"model_dump") else dict(order)
@@ -3506,3 +3526,4 @@ register_platform_routes(app, sys.modules[__name__])
 configuration.register(app, sys.modules[__name__])
 
 taxes.register(app, sys.modules[__name__])
+coverage.register(app, sys.modules[__name__])
