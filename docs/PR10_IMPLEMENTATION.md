@@ -1,6 +1,6 @@
 # PR #10 — OpenStreetMap delivery coverage
 
-Implemented on 13 October 2026, based on accepted main `be01ff3`. Development branch: `codex/pr-10-service-area-maps`. Awaiting review; not merged or deployed. The running release remains PR #9 (`9e68ce3`). PR #11 and later work remains unstarted.
+Implemented on 13 October 2026, based on accepted main `be01ff3`. Accepted with explicit user approval, merged into main at `bf41434191f7beaf0650600d2d99fa55c965040a`, and deployed to both Render services at that exact commit on 13 October 2026. The merged tree matches validated head `569b746`; public API health/authentication/CORS, published coverage routes and the web coverage screen/bundle pass. See [release evidence](DEPLOYMENT_STATUS.md). Earlier publication notes below describe the review stage. PR #11 and later work remains unstarted.
 
 ## Coverage and address source
 

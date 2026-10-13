@@ -2,7 +2,24 @@
 
 Updated: 13 October 2026.
 
-## Current live release — PR #9
+## Current live release — PR #10
+
+The user explicitly authorized merge and deployment. PR #10 was merged into main at `bf41434191f7beaf0650600d2d99fa55c965040a`, independently verified through authenticated Git. The merged tree exactly matches validated head `569b746`: 136 backend tests without skips, 31 frontend tests, clean TypeScript, 31-route Expo export, six desktop/mobile browser suites and zero-error load validation. See [implementation and rollout notes](PR10_IMPLEMENTATION.md).
+
+Authenticated Render API confirms both services **live** at that exact approved merge. Existing service settings, application credentials, roots and automatic deployment off were preserved.
+
+| Service | Public URL | Service ID | Live deployment | Finished (India time) |
+| --- | --- | --- | --- | --- |
+| API | https://fabclean-saas-api.onrender.com | `srv-db3nmqij9qps738d2qkg` | `dep-db6t5m3ncjis73ep2d4g` | 2026-10-13 12:13:41 IST |
+| Web | https://fabclean-saas-web.onrender.com | `srv-db3nmv60tbcc73895n1g` | `dep-db6t5mbncjis73ep2e1g` | 2026-10-13 12:14:51 IST |
+
+Public checks pass: API health reports PostgreSQL; published OpenAPI contains coverage GET/PUT and address checks. Unauthenticated GET/PUT policy and POST eligibility calls return 401 with approved-origin CORS and no-store. Policy PUT preflight accepts the web origin and rejects an untrusted origin. The homepage and `/coverage` return 200; freshly fetched JavaScript contains the coverage checker, polygon controls, OSM tile URL and copyright attribution.
+
+Coverage remains opt-in for each store. Brand administrators first save valid store coordinates; store administrators then configure/enable radius or polygon coverage under Admin → Delivery Coverage Map. This release did not enable policies, geocode addresses or change existing delivery rules automatically.
+
+No production fixtures, sign-in attempts, policy writes, address-check records or load traffic were used for smoke verification. Production migration rows/RLS and authenticated coverage execution were not directly inspected; startup completed and local migration/integration tests passed. Actual OSM tile fetches remain unverified from this cloud environment pending its saved network draft; published client URLs and offline fallback are verified. Native-device checks remain unperformed. Hosted GitHub CI/review flags remain unverified. This documentation-only follow-up leaves the live application commit at `bf41434`.
+
+## Previous release — PR #9 (historical evidence)
 
 The user explicitly authorized merge and deployment. PR #9 was merged into main at `9e68ce3d43eea0ea12a1fc9b1d2d36bd6a70a28f`; authenticated Git independently verified remote main. The merged tree exactly matches validated head `fa45909`: 119 backend tests without skips, 26 frontend tests, clean TypeScript, 30-route export, five desktop/mobile browser suites and zero-error load validation. See [implementation evidence](PR9_IMPLEMENTATION.md).
 
