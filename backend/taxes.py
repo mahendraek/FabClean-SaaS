@@ -2,6 +2,7 @@
 import json
 import re
 import uuid
+import locations
 from copy import deepcopy
 from datetime import date,datetime,timezone
 from decimal import Decimal,InvalidOperation,ROUND_HALF_UP
@@ -56,6 +57,7 @@ def rules(s):
     with s.db() as conn:return [r['payload'] for r in conn.execute('SELECT payload FROM tax_rules ORDER BY id').fetchall()]
 
 def normalized(text):return str(text or '').strip().casefold()
+def canonical_location(loc):return {**loc,'country':locations.country(loc.get('country')),'state':locations.state(loc.get('state'),loc.get('country'))}
 def validate_rule(value):
     fields={'component','jurisdiction','country','state','city','postal_code','rate','effective_from','effective_to'}
     if not isinstance(value,dict) or set(value)-fields:raise HTTPException(400,'Unsupported tax-rule fields')
@@ -64,7 +66,7 @@ def validate_rule(value):
         if not isinstance(r.get(key),str) or len(r[key])>120:raise HTTPException(400,'Invalid jurisdiction fields')
         r[key]=r[key].strip()
     if not re.fullmatch('[a-z][a-z0-9_-]{0,39}',r['component']) or not r['jurisdiction'] or not re.fullmatch('[A-Za-z]{2}',r['country']) or not r['state']:raise HTTPException(400,'Component, jurisdiction, country and state are required')
-    r['country']=r['country'].upper();rate=number(r.get('rate'),'Rate')
+    locations.validate_location(r);rate=number(r.get('rate'),'Rate')
     if rate>100 or rate.as_tuple().exponent<-4:raise HTTPException(400,'Rate must be 0–100 percent with at most four decimal places')
     r['rate']=str(rate)
     start=iso_date(r.get('effective_from'));end=iso_date(r['effective_to']) if r['effective_to'] else None
@@ -74,6 +76,8 @@ def validate_rule(value):
 def same_selector(a,b):return all(normalized(a.get(k))==normalized(b.get(k)) for k in ('component','country','state','city','postal_code'))
 def overlaps(a,b):return a['effective_from']<(b.get('effective_to') or '9999-12-31') and b['effective_from']<(a.get('effective_to') or '9999-12-31')
 def selected(rates,loc,day):
+    loc=canonical_location(loc)
+    rates=[{**r,**{k:canonical_location(r)[k] for k in ('country','state')}} for r in rates]
     matches=[r for r in rates if not r.get('voided') and r['effective_from']<=day and (not r.get('effective_to') or day<r['effective_to']) and all(not r.get(k) or normalized(r[k])==normalized(loc.get(k)) for k in ('country','state','city','postal_code'))]
     components={}
     for r in matches:
@@ -168,7 +172,9 @@ def register(app,s):
     @app.get('/api/taxes/rules')
     def get_rules(x_session_token:str|None=Header(default=None)):
         s.require_permission('admin',x_session_token)
-        return {'rules':rules(s),'location':location(s),'service_date':store_date(location(s))}
+        loc=canonical_location(location(s));day=store_date(loc);saved=rules(s);effective=selected(saved,loc,day)
+        taxable=[v['name'] for v in s.get_service_values() if v.get('taxable')]
+        return {'rules':saved,'location':loc,'service_date':day,'diagnostics':{'effective_components':effective,'taxable_services':taxable,'status':'location_rules_active' if effective else 'missing_location_rules','message':('Location rates match the saved store. '+('Taxable services: '+', '.join(taxable) if taxable else 'All services are exempt; mark applicable services taxable to calculate tax.')) if effective else 'No current location rule matches this store. Add the correct rates for its saved country/state and effective date. ZIP lookup does not supply tax rates.'}}
 
     @app.post('/api/taxes/rules')
     def create(payload:dict,x_session_token:str|None=Header(default=None)):

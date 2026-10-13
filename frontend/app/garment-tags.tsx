@@ -1,3 +1,4 @@
+import { themedStyles } from "@/src/theme";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -76,7 +77,7 @@ export default function GarmentTags(){
   </ScrollView>;
 }
 
-const s=StyleSheet.create({
+const s=themedStyles({
   loading:{padding:30},page:{padding:20,maxWidth:1050,width:"100%",alignSelf:"center",gap:16},top:{flexDirection:"row",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"},back:{flexDirection:"row",gap:7,alignItems:"center"},backText:{fontWeight:"800",color:colors.ink},brand:{flexDirection:"row",gap:6,alignItems:"center"},brandText:{fontWeight:"900",color:colors.ink},
   header:{backgroundColor:"#fff",borderWidth:1,borderColor:colors.border,borderRadius:20,padding:20,flexDirection:"row",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"},headerActions:{flexDirection:"row",gap:8,flexWrap:"wrap"},kicker:{fontSize:10,fontWeight:"900",letterSpacing:1.2,color:colors.primary},title:{fontSize:30,fontWeight:"900",color:colors.ink},sub:{color:colors.muted,marginTop:3},printBtn:{backgroundColor:colors.primary,borderRadius:11,minHeight:42,paddingHorizontal:14,flexDirection:"row",gap:7,alignItems:"center",justifyContent:"center"},printText:{color:"#fff",fontWeight:"900"},rawBtn:{borderWidth:1,borderColor:colors.primary,borderRadius:11,minHeight:42,paddingHorizontal:14,alignItems:"center",justifyContent:"center"},rawText:{color:colors.primary,fontWeight:"900"},
   tags:{flexDirection:"row",flexWrap:"wrap",gap:10},tag:{width:230,minHeight:210,backgroundColor:"#fff",borderWidth:1,borderColor:"#222",borderRadius:8,padding:12,alignItems:"center"},brandSmall:{fontSize:11,fontWeight:"900",letterSpacing:1.2},order:{fontSize:20,fontWeight:"900",marginTop:4},item:{fontSize:14,fontWeight:"800",marginTop:3,textAlign:"center"},position:{fontSize:11,color:colors.muted,marginTop:2},barcode:{marginTop:10},code:{fontSize:13,fontWeight:"900",letterSpacing:1,marginTop:5},reprint:{marginTop:8,paddingVertical:5,paddingHorizontal:8},reprintText:{fontSize:11,fontWeight:"800",color:colors.primary},err:{color:colors.danger},noPrint:{}

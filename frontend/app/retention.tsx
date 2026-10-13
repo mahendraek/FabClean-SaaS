@@ -1,3 +1,4 @@
+import { themedStyles } from "@/src/theme";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
@@ -82,7 +83,7 @@ export default function RetentionAdmin(){
   </ScrollView>;
 }
 
-const s=StyleSheet.create({
+const s=themedStyles({
   page:{padding:20,maxWidth:1100,width:"100%",alignSelf:"center",gap:16},top:{flexDirection:"row",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"},back:{flexDirection:"row",gap:7,alignItems:"center"},backText:{fontWeight:"800",color:colors.ink},brand:{flexDirection:"row",gap:6,alignItems:"center"},brandText:{fontWeight:"900",color:colors.ink},
   header:{backgroundColor:"#fff",borderWidth:1,borderColor:colors.border,borderRadius:22,padding:22,flexDirection:"row",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"},kicker:{fontSize:10,fontWeight:"900",letterSpacing:1.3,color:colors.primary},title:{fontSize:30,fontWeight:"900",color:colors.ink},sub:{color:colors.muted,marginTop:5,maxWidth:700},newBtn:{backgroundColor:colors.primary,borderRadius:12,paddingHorizontal:14,minHeight:42,paddingVertical:10,justifyContent:"center",flexDirection:"row",gap:6,alignItems:"center"},newText:{color:"#fff",fontWeight:"900"},
   shortcuts:{flexDirection:"row",gap:10,flexWrap:"wrap"},shortcut:{flex:1,minWidth:220,backgroundColor:"#fff",borderWidth:1,borderColor:colors.border,borderRadius:14,padding:14},shortcutTitle:{fontWeight:"900",color:colors.ink},layout:{flexDirection:"row",gap:16,alignItems:"flex-start",flexWrap:"wrap"},list:{width:360,maxWidth:"100%",backgroundColor:"#fff",borderWidth:1,borderColor:colors.border,borderRadius:18,padding:16},editor:{flex:1,minWidth:300,backgroundColor:"#fff",borderWidth:1,borderColor:colors.border,borderRadius:18,padding:18},sectionTitle:{fontSize:18,fontWeight:"900",color:colors.ink,marginBottom:10},offerRow:{paddingVertical:12,borderTopWidth:1,borderTopColor:colors.border,flexDirection:"row",gap:10,alignItems:"center"},offerRowOn:{backgroundColor:colors.primarySoft},offerName:{fontWeight:"900",color:colors.ink},help:{fontSize:12,color:colors.muted,marginTop:3},status:{fontSize:11,fontWeight:"900"},active:{color:colors.success},inactive:{color:colors.danger},

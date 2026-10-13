@@ -1,3 +1,4 @@
+import { themedStyles } from "@/src/theme";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
@@ -50,7 +51,7 @@ export default function Hardware(){
 
 function Field({label,children}:{label:string;children:any}){return <View style={{flex:1,minWidth:170}}><Text style={s.label}>{label}</Text>{children}</View>}
 
-const s=StyleSheet.create({
+const s=themedStyles({
   page:{padding:20,maxWidth:980,width:"100%",alignSelf:"center",gap:16},top:{flexDirection:"row",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"},back:{flexDirection:"row",gap:7,alignItems:"center"},backText:{fontWeight:"800",color:colors.ink},brand:{flexDirection:"row",gap:6,alignItems:"center"},brandText:{fontWeight:"900",color:colors.ink},
   header:{backgroundColor:"#fff",borderWidth:1,borderColor:colors.border,borderRadius:22,padding:22},kicker:{fontSize:10,fontWeight:"900",letterSpacing:1.3,color:colors.primary},title:{fontSize:32,fontWeight:"900",color:colors.ink},sub:{color:colors.muted,marginTop:5},
   panel:{backgroundColor:"#fff",borderWidth:1,borderColor:colors.border,borderRadius:18,padding:18},section:{fontSize:20,fontWeight:"900",color:colors.ink},help:{fontSize:12,lineHeight:19,color:colors.muted,marginTop:4},formRow:{flexDirection:"row",gap:10,flexWrap:"wrap"},label:{fontSize:10,fontWeight:"900",letterSpacing:.7,color:colors.muted,textTransform:"uppercase",marginTop:13,marginBottom:6},input:{borderWidth:1,borderColor:colors.border,borderRadius:11,padding:11,backgroundColor:"#fff"},toggle:{marginTop:12,backgroundColor:colors.soft,borderRadius:12,padding:12,flexDirection:"row",justifyContent:"space-between",alignItems:"center"},toggleTitle:{fontWeight:"900",color:colors.ink},preview:{fontWeight:"800",color:colors.primary,marginTop:8},

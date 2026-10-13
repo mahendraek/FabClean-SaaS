@@ -1,3 +1,4 @@
+import { themedStyles } from "./theme";
 import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { CaretLeft, CaretRight, CalendarBlank } from "phosphor-react-native";
@@ -61,7 +62,7 @@ export function CalendarDatePicker({value,onChange,min,label}:{value:string;onCh
   </View>;
 }
 
-const s=StyleSheet.create({
+const s=themedStyles({
   wrap:{marginTop:6,width:"100%"},field:{minHeight:45,borderWidth:1,borderColor:colors.border,borderRadius:12,paddingHorizontal:12,flexDirection:"row",alignItems:"center",gap:9,backgroundColor:"#fff"},value:{fontWeight:"700",color:colors.ink},placeholder:{color:colors.muted,fontWeight:"500"},
   calendar:{marginTop:7,borderWidth:1,borderColor:colors.border,borderRadius:14,padding:10,backgroundColor:"#fff",maxWidth:330},header:{flexDirection:"row",alignItems:"center",justifyContent:"space-between",marginBottom:8},nav:{width:34,height:34,borderWidth:1,borderColor:colors.border,borderRadius:9,alignItems:"center",justifyContent:"center"},month:{fontWeight:"900",color:colors.ink},
   grid:{flexDirection:"row",flexWrap:"wrap"},cell:{width:"14.2857%",aspectRatio:1,alignItems:"center",justifyContent:"center"},week:{fontSize:10,fontWeight:"900",color:colors.muted},day:{borderRadius:999},selected:{backgroundColor:colors.primary},disabled:{opacity:.3},dayText:{fontSize:12,fontWeight:"800",color:colors.ink},selectedText:{color:"#fff"},disabledText:{color:colors.muted}

@@ -1,3 +1,4 @@
+import { themedStyles } from "@/src/theme";
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -35,4 +36,4 @@ export default function Coverage(){
   </View></ScrollView>;
 }
 function Button({label,onPress,disabled=false}:{label:string;onPress:()=>void;disabled?:boolean}){return <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} style={[s.button,disabled&&{opacity:.45}]}><Text style={s.link}>{label}</Text></Pressable>}
-const s=StyleSheet.create({page:{padding:16,paddingBottom:50},wrap:{maxWidth:1000,width:'100%',alignSelf:'center',gap:14},title:{fontSize:26,fontWeight:'700',color:colors.ink},heading:{fontSize:18,fontWeight:'600',color:colors.ink},card:{padding:16,gap:12,borderWidth:1,borderColor:colors.border,borderRadius:12,backgroundColor:'white'},row:{flexDirection:'row',flexWrap:'wrap',gap:8,alignItems:'center'},input:{borderWidth:1,borderColor:colors.border,padding:10,borderRadius:8,minWidth:130,flexGrow:1},button:{padding:12,borderWidth:1,borderColor:colors.border,borderRadius:8},link:{color:colors.primary},error:{color:colors.danger}});
+const s=themedStyles({page:{padding:16,paddingBottom:50},wrap:{maxWidth:1000,width:'100%',alignSelf:'center',gap:14},title:{fontSize:26,fontWeight:'700',color:colors.ink},heading:{fontSize:18,fontWeight:'600',color:colors.ink},card:{padding:16,gap:12,borderWidth:1,borderColor:colors.border,borderRadius:12,backgroundColor:'white'},row:{flexDirection:'row',flexWrap:'wrap',gap:8,alignItems:'center'},input:{borderWidth:1,borderColor:colors.border,padding:10,borderRadius:8,minWidth:130,flexGrow:1},button:{padding:12,borderWidth:1,borderColor:colors.border,borderRadius:8},link:{color:colors.primary},error:{color:colors.danger}});

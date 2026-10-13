@@ -1,3 +1,4 @@
+import { themedStyles } from "@/src/theme";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
@@ -88,7 +89,7 @@ export default function Customers(){
   </ScrollView>;
 }
 
-const s=StyleSheet.create({
+const s=themedStyles({
   page:{padding:20,maxWidth:1100,width:"100%",alignSelf:"center",gap:16},
   top:{flexDirection:"row",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"},
   back:{flexDirection:"row",gap:7,alignItems:"center"},backText:{fontWeight:"700",color:colors.ink},

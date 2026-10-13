@@ -1,3 +1,4 @@
+import { themedStyles } from "./theme";
 import { useEffect, useState } from 'react';
 import { Image, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Polygon } from 'react-native-svg';
@@ -36,4 +37,4 @@ export function CoverageMap({origin,selected,policy,draft=[],onSelect}:{origin:M
     <Text>Maps load visible tiles from OpenStreetMap. No addresses are sent to a geocoder. A selected pin must be confirmed against the entered address.</Text>
   </View>;
 }
-const s=StyleSheet.create({wrap:{gap:8},controls:{flexDirection:'row',flexWrap:'wrap',gap:8,alignItems:'center'},button:{borderWidth:1,borderColor:colors.border,borderRadius:7,padding:8,backgroundColor:'white'}});
+const s=themedStyles({wrap:{gap:8},controls:{flexDirection:'row',flexWrap:'wrap',gap:8,alignItems:'center'},button:{borderWidth:1,borderColor:colors.border,borderRadius:7,padding:8,backgroundColor:'white'}});

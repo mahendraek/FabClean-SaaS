@@ -1,3 +1,4 @@
+import { themedStyles } from "@/src/theme";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -59,7 +60,7 @@ export default function CustomerProfile(){
   </ScrollView>;
 }
 function Metric({label,value}:{label:string;value:string}){return <View style={s.metric}><Text style={s.metricValue}>{value}</Text><Text style={s.metricLabel}>{label}</Text></View>}
-const s=StyleSheet.create({
+const s=themedStyles({
   loading:{padding:30},page:{padding:20,maxWidth:1100,width:"100%",alignSelf:"center",gap:16},top:{flexDirection:"row",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"},back:{flexDirection:"row",gap:7,alignItems:"center"},backText:{fontWeight:"800",color:colors.ink},brand:{flexDirection:"row",gap:6,alignItems:"center"},brandText:{fontWeight:"900",color:colors.ink},
   header:{backgroundColor:"#fff",borderWidth:1,borderColor:colors.border,borderRadius:22,padding:22,flexDirection:"row",gap:14,alignItems:"center",flexWrap:"wrap"},avatar:{width:54,height:54,borderRadius:27,backgroundColor:colors.primarySoft,alignItems:"center",justifyContent:"center"},kicker:{fontSize:10,fontWeight:"900",letterSpacing:1.3,color:colors.primary},title:{fontSize:30,fontWeight:"900",color:colors.ink},sub:{color:colors.muted,marginTop:3},newBtn:{backgroundColor:colors.primary,borderRadius:12,minHeight:42,paddingHorizontal:15,paddingVertical:10,alignItems:"center",justifyContent:"center"},newText:{color:"#fff",fontWeight:"900"},
   summary:{flexDirection:"row",gap:10,flexWrap:"wrap"},metric:{flex:1,minWidth:150,backgroundColor:"#fff",borderWidth:1,borderColor:colors.border,borderRadius:16,padding:15},metricValue:{fontSize:21,fontWeight:"900",color:colors.ink},metricLabel:{fontSize:11,color:colors.muted,marginTop:3},

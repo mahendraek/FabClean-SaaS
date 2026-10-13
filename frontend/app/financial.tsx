@@ -1,3 +1,4 @@
+import { themedStyles } from "@/src/theme";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
@@ -42,7 +43,7 @@ export default function Financial(){
   </ScrollView>;
 }
 function Metric({label,value}:{label:string;value:string}){return <View style={s.metric}><Text style={s.metricValue}>{value}</Text><Text style={s.metricLabel}>{label}</Text></View>}
-const s=StyleSheet.create({
+const s=themedStyles({
   page:{padding:20,maxWidth:1100,width:"100%",alignSelf:"center",gap:16},top:{flexDirection:"row",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"},back:{flexDirection:"row",gap:7,alignItems:"center"},backText:{fontWeight:"800",color:colors.ink},brand:{flexDirection:"row",gap:6,alignItems:"center"},brandText:{fontWeight:"900",color:colors.ink},
   header:{backgroundColor:"#fff",borderWidth:1,borderColor:colors.border,borderRadius:22,padding:24},kicker:{fontSize:10,fontWeight:"900",letterSpacing:1.3,color:colors.primary},title:{fontSize:32,fontWeight:"900",color:colors.ink,marginTop:3},sub:{color:colors.muted,marginTop:5},
   filter:{flexDirection:"row",gap:8,flexWrap:"wrap"},input:{flex:1,borderWidth:1,borderColor:colors.border,borderRadius:11,padding:11,backgroundColor:"#fff"},loadBtn:{backgroundColor:colors.primary,borderRadius:11,paddingHorizontal:18,minHeight:42,alignItems:"center",justifyContent:"center"},loadText:{color:"#fff",fontWeight:"900"},err:{color:colors.danger},

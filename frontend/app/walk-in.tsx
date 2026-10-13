@@ -1,3 +1,4 @@
+import { themedStyles } from "@/src/theme";
 import { useEffect, useMemo, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -407,7 +408,7 @@ export default function WalkIn(){
   </ScrollView>
 }
 
-const s=StyleSheet.create({
+const s=themedStyles({
   page:{padding:20,maxWidth:1180,width:"100%",alignSelf:"center",gap:16},top:{flexDirection:"row",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"},back:{flexDirection:"row",gap:7,alignItems:"center"},backText:{fontWeight:"700",color:colors.ink},brand:{flexDirection:"row",alignItems:"center",gap:6},brandText:{fontWeight:"900",color:colors.ink},
   header:{backgroundColor:"#fff",borderWidth:1,borderColor:colors.border,borderRadius:22,padding:24},kicker:{fontSize:11,fontWeight:"900",letterSpacing:1.5,color:colors.primary},title:{fontSize:32,fontWeight:"900",color:colors.ink,marginTop:3},sub:{color:colors.muted,marginTop:6},
   fulfillmentList:{flexDirection:"row",flexWrap:"wrap",gap:8},fulfillmentOption:{flexDirection:"row",alignItems:"flex-start",gap:9,paddingVertical:9,paddingHorizontal:10,borderWidth:1,borderColor:colors.border,borderRadius:12,backgroundColor:colors.soft,flexBasis:"48%",flexGrow:1,minWidth:220},radioOuter:{width:20,height:20,borderRadius:999,borderWidth:2,borderColor:colors.border,alignItems:"center",justifyContent:"center",marginTop:1},radioOuterOn:{borderColor:colors.primary},radioInner:{width:10,height:10,borderRadius:999,backgroundColor:colors.primary},fulfillmentLabel:{fontWeight:"900",color:colors.ink},fulfillmentHelp:{fontSize:12,color:colors.muted,marginTop:2},layout:{flexDirection:"row",flexWrap:"wrap",gap:16,alignItems:"flex-start"},main:{flex:1,minWidth:580,gap:16},sidebar:{width:350,maxWidth:"100%"},panel:{backgroundColor:"#fff",borderWidth:1,borderColor:colors.border,borderRadius:20,padding:20},panelTitle:{fontSize:18,fontWeight:"900",color:colors.ink,marginBottom:14},

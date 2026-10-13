@@ -52,7 +52,7 @@ for (const [label, saved, allowed, expected] of [
     get: async () => ({ staff: { id: 'u1' }, active_brand: { id: 'b1' }, active_store: { id: 's1' }, brands: [{ id: 'b1' }], stores: allowed ? [{ id: 's2', brand_id: 'b1' }] : [] }),
     put: async (...args) => { updates.push(args); }
   }, readPreference: async key => { assert.equal(key, 'fabclean_context_u1'); return saved; }, writePreference: async () => {} };
-  vm.runInNewContext(selectionSource, { exports, require: name => name === './api' ? apiModule : name === 'react-native' ? { StyleSheet: { create: x => x } } : name === './theme' ? { colors: {} } : {} });
+  vm.runInNewContext(selectionSource, { exports, require: name => name === './api' ? apiModule : name === 'react-native' ? { StyleSheet: { create: x => x } } : name === './theme' ? { colors: {}, themedStyles: x => x } : {} });
   await exports.restoreSelection(); assert.equal(updates.length, expected);
 });
 test('sign-out revokes the server session before clearing persisted credentials', async () => {
@@ -101,7 +101,7 @@ test('permission removed during selection restoration discards the preference', 
   get: async () => ({ staff: { id: 'u1' }, active_brand: { id: 'b1' }, active_store: { id: 's1' }, brands: [{ id: 'b1' }], stores: [{ id: 's2', brand_id: 'b1' }] }),
   put: async () => { const e = new Error('Revoked'); e.status = 403; throw e; }
  }, readPreference: async () => '{"brand_id":"b1","store_id":"s2"}', writePreference: async (key, value) => { assert.equal(key, 'fabclean_context_u1'); assert.equal(value, null); removed = true; } };
- vm.runInNewContext(selectionSource, { exports, require: name => name === './api' ? module : name === 'react-native' ? { StyleSheet: { create: x => x } } : name === './theme' ? { colors: {} } : {} });
+ vm.runInNewContext(selectionSource, { exports, require: name => name === './api' ? module : name === 'react-native' ? { StyleSheet: { create: x => x } } : name === './theme' ? { colors: {}, themedStyles: x => x } : {} });
  await exports.restoreSelection(); assert.equal(removed, true);
 });
 test('failed invitation identity proof preserves an unrelated valid session', async () => {

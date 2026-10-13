@@ -1,3 +1,4 @@
+import { themedStyles } from "@/src/theme";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
@@ -281,7 +282,7 @@ function Metric({label,value}:{label:string;value:any}){return <View style={s.me
 function Field({label,children}:{label:string;children:any}){return <View style={{flex:1,minWidth:180}}><Text style={s.label}>{label}</Text>{children}</View>}
 function Toggle({label,value,onChange}:{label:string;value:boolean;onChange:(v:boolean)=>void}){return <View style={s.toggle}><Text style={s.toggleText}>{label}</Text><Switch value={value} onValueChange={onChange}/></View>}
 
-const s=StyleSheet.create({
+const s=themedStyles({
   loading:{padding:30},page:{padding:20,maxWidth:1240,width:"100%",alignSelf:"center",gap:16},
   top:{flexDirection:"row",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"},back:{flexDirection:"row",gap:7,alignItems:"center"},backText:{fontWeight:"700",color:colors.ink},brand:{flexDirection:"row",gap:6,alignItems:"center"},brandText:{fontWeight:"900",color:colors.ink},
   header:{backgroundColor:"#fff",borderWidth:1,borderColor:colors.border,borderRadius:22,padding:22,flexDirection:"row",justifyContent:"space-between",alignItems:"flex-start",gap:18,flexWrap:"wrap"},kicker:{fontSize:11,fontWeight:"900",letterSpacing:1.4,color:colors.primary},title:{fontSize:32,fontWeight:"900",color:colors.ink,marginTop:2},sub:{color:colors.muted,marginTop:5,maxWidth:760},adminGrid:{flexDirection:"row",flexWrap:"wrap",gap:10},adminCard:{flexBasis:"31%",flexGrow:1,minWidth:220,backgroundColor:"#fff",borderWidth:1,borderColor:colors.border,borderRadius:16,padding:14,flexDirection:"row",gap:10,alignItems:"center"},adminIcon:{width:38,height:38,borderRadius:12,backgroundColor:colors.primarySoft,alignItems:"center",justifyContent:"center"},adminCardTitle:{fontWeight:"900",color:colors.ink},adminCardText:{fontSize:12,color:colors.muted,marginTop:2},primaryAction:{backgroundColor:colors.primary,borderRadius:12,paddingHorizontal:16,paddingVertical:12,flexDirection:"row",gap:7,alignItems:"center"},primaryActionText:{color:"#fff",fontWeight:"900"},headerActions:{flex:1,minWidth:280,flexDirection:"row",justifyContent:"flex-end",gap:8,flexWrap:"wrap"},newBtn:{backgroundColor:colors.primary,borderRadius:12,minHeight:42,paddingHorizontal:14,paddingVertical:10,flexDirection:"row",gap:7,alignItems:"center",justifyContent:"center",flexShrink:0},newText:{color:"#fff",fontWeight:"900"},

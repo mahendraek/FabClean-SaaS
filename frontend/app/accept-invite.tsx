@@ -1,3 +1,4 @@
+import { themedStyles } from "@/src/theme";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useLocalSearchParams, useRouter, useNavigation, useRootNavigationState } from "expo-router";
@@ -54,4 +55,4 @@ export default function AcceptInvite() {
     </>}
   </View></ScrollView>;
 }
-const s = StyleSheet.create({ page: { flexGrow: 1, padding: 20, alignItems: "center", justifyContent: "center", backgroundColor: colors.soft }, card: { width: "100%", maxWidth: 560, gap: 16, padding: 24, borderRadius: 18, backgroundColor: "white", borderWidth: 1, borderColor: colors.border }, title: { fontSize: 28, fontWeight: "900", color: colors.ink }, heading: { fontSize: 18, fontWeight: "800", color: colors.ink }, input: { borderWidth: 1, borderColor: colors.border, borderRadius: 10, minHeight: 44, padding: 12 }, button: { minHeight: 44, backgroundColor: colors.primary, borderRadius: 10, padding: 12, alignItems: "center", justifyContent: "center" }, buttonText: { color: "white", fontWeight: "800" }, error: { color: colors.danger } });
+const s = themedStyles({ page: { flexGrow: 1, padding: 20, alignItems: "center", justifyContent: "center", backgroundColor: colors.soft }, card: { width: "100%", maxWidth: 560, gap: 16, padding: 24, borderRadius: 18, backgroundColor: "white", borderWidth: 1, borderColor: colors.border }, title: { fontSize: 28, fontWeight: "900", color: colors.ink }, heading: { fontSize: 18, fontWeight: "800", color: colors.ink }, input: { borderWidth: 1, borderColor: colors.border, borderRadius: 10, minHeight: 44, padding: 12 }, button: { minHeight: 44, backgroundColor: colors.primary, borderRadius: 10, padding: 12, alignItems: "center", justifyContent: "center" }, buttonText: { color: "white", fontWeight: "800" }, error: { color: colors.danger } });
