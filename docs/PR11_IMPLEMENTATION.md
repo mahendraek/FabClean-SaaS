@@ -4,6 +4,8 @@ Implementation branch: `codex/pr-11-receipts-location-taxes`, based on accepted 
 
 Implementation commit: `5388cc3`; planning ancestry merge: `bc2a050`. Both development branches (`codex/pr-11-receipts-location-taxes`, `roadmap/notifications-receipts`) and PR #11's Git head ref were independently verified at `bc2a050`; its tree matches the validated implementation. Main remains `4b983a1`. GitHub API metadata access and title/body editing returned Forbidden, so open/closed/review/hosted-CI flags are unverified. Subsequent documentation commits record this evidence without changing the validated application tree.
 
+WhatsApp implementation follow-up: `9159585`, independently verified on both development branches and PR #11's Git head ref after the updated full gate. Main remains `4b983a1`; no merge or deployment occurred. Documentation-only publication notes do not change this validated application tree.
+
 ## Behavior
 
 ### Manual WhatsApp sharing — selected free messaging workflow
