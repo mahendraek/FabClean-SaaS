@@ -1,7 +1,9 @@
+import { themedStyles } from "./theme";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, AppState, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { usePathname, useRouter } from "expo-router";
 import { api, getStoredStaff, getStoredToken, invalidateRequests, readPreference, refreshSession, sessionReady, subscribeSession, writePreference } from "./api";
+import { applyBrandTheme } from "./theme";
 import { colors } from "./theme";
 type Brand = { id: string; name: string };
 type Store = { id: string; brand_id: string; name: string; store_code: string };
@@ -28,6 +30,7 @@ export async function restoreSelection() {
 export function ActiveContext({ children }: { children: (key: string) => React.ReactNode }) {
   const router = useRouter(), pathname = usePathname();
   const [context, setContext] = useState<Context | null>(null);
+  useEffect(()=>{let alive=true;applyBrandTheme('teal');if(context?.active_store)api.get<any>('/settings').then(v=>{if(alive)applyBrandTheme(v.brand_theme||'teal');}).catch(()=>{});return()=>{alive=false;};},[context?.active_brand?.id,context?.active_store?.id]);
   const [ready, setReady] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [open, setOpen] = useState(false), [brandId, setBrandId] = useState("");
   const [selected, setSelected] = useState<Store | null>(null), [revision, setRevision] = useState(0);
@@ -96,7 +99,7 @@ export function ActiveContext({ children }: { children: (key: string) => React.R
     </Modal>
   </View>;
 }
-const s = StyleSheet.create({
+const s = themedStyles({
   header: { padding: 14, paddingTop: 20, backgroundColor: "white", borderBottomWidth: 1, borderColor: colors.border, flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 12 },
   label: { fontSize: 11, color: colors.muted, marginVertical: 8, fontWeight: "700" }, title: { fontSize: 17, color: colors.ink, fontWeight: "700" },
   button: { backgroundColor: colors.primary, borderRadius: 8, padding: 12, minHeight: 44, justifyContent: "center" }, buttonText: { color: "white", fontWeight: "700" },

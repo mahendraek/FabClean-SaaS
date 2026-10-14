@@ -1,3 +1,4 @@
+import { themedStyles } from "@/src/theme";
 import { useEffect, useState } from "react";
 
 import { useRouter } from "expo-router";
@@ -104,7 +105,7 @@ export default function Home() {
   </ScrollView>;
 }
 
-const s=StyleSheet.create({
+const s=themedStyles({
   page:{padding:20,maxWidth:1180,width:"100%",alignSelf:"center",gap:20},
   nav:{minHeight:70,flexDirection:"row",alignItems:"center",justifyContent:"space-between",paddingVertical:8,gap:12,flexWrap:"wrap"},
   logoWrap:{flexDirection:"row",alignItems:"center",gap:10},logoMark:{width:40,height:40,borderRadius:12,backgroundColor:colors.primary,alignItems:"center",justifyContent:"center"},

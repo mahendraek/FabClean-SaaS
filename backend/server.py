@@ -1,6 +1,8 @@
 import taxes
 import configuration
 import coverage
+import locations
+import sample_data
 import base64
 import json
 import os
@@ -2696,6 +2698,7 @@ def lock_brand_operations(conn, brand_id):
 
 
 def validate_store_change(conn, brand_id, store_id, data):
+    locations.validate_location(data)
     if (data.get('latitude') is None)!=(data.get('longitude') is None):raise HTTPException(400,'Supply both store coordinates or leave both blank')
     if data.get('latitude') is not None:coverage.point({key:data[key] for key in ('latitude','longitude')})
     if not isinstance(data.get("store_type", "regular"), str) or data.get("store_type", "regular") not in STORE_TYPES:
@@ -3527,3 +3530,7 @@ configuration.register(app, sys.modules[__name__])
 
 taxes.register(app, sys.modules[__name__])
 coverage.register(app, sys.modules[__name__])
+
+locations.register(app, sys.modules[__name__])
+
+sample_data.register(app, sys.modules[__name__])

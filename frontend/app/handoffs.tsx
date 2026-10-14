@@ -1,3 +1,4 @@
+import { themedStyles } from "@/src/theme";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
@@ -93,7 +94,7 @@ export default function Handoffs() {
     </Modal>
   </ScrollView>;
 }
-const s = StyleSheet.create({
+const s = themedStyles({
   page: { padding: 18, maxWidth: 1080, width: "100%", alignSelf: "center", gap: 14 }, row: { flexDirection: "row", flexWrap: "wrap", gap: 10, alignItems: "center" },
   card: { backgroundColor: "white", borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 18, gap: 12 }, title: { fontSize: 28, fontWeight: "800", color: colors.ink }, heading: { fontSize: 18, fontWeight: "700", color: colors.ink },
   primary: { backgroundColor: colors.primary, borderRadius: 10, padding: 12, minHeight: 44, alignSelf: "flex-start", justifyContent: "center" }, primaryText: { color: "white", fontWeight: "700" }, secondary: { padding: 12, minHeight: 44 },

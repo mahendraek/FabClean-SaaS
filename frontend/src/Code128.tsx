@@ -1,3 +1,4 @@
+import { themedStyles } from "./theme";
 import React from "react";
 import Svg, { Rect } from "react-native-svg";
 import { View, Text, StyleSheet } from "react-native";
@@ -44,7 +45,7 @@ export function Code128({value,height=52,moduleWidth=2,showText=true}:{value:str
   </View>;
 }
 
-const styles=StyleSheet.create({
+const styles=themedStyles({
   wrap:{alignItems:"flex-start"},
   text:{fontSize:11,fontWeight:"700",letterSpacing:1,color:"#111",marginTop:4}
 });

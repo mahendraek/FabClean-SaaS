@@ -1,0 +1,27 @@
+# Store location, tax diagnostics and branding follow-up
+
+Requested after PR #10 release on 13 October 2026. Branch `codex/admin-location-tax-branding`, based on main `0d5c2d1`. This is the user's administrative maintenance request; PR #11 remains unstarted. Not merged or deployed.
+
+## Delivered code
+
+- Searchable country and dependent state/region selects for store administration and tax rules, plus a country select in platform brand administration. Bundled ISO data contains 249 countries and 5,046 subdivisions, sourced from pycountry 24.6.1 / Debian iso-codes. The bundled LGPL license is `backend/LOCATION_DATA_LICENSE.txt`; no runtime pycountry dependency is needed.
+- Debounced ZIP/postal lookup through Zippopotam.us fills country and state. A country must first be selected: postal codes are not globally unique and their format alone cannot select a country safely. Invalid/unsupported codes and provider failures preserve manual selections; stale responses cannot overwrite a newer edit. Only country/postal code are sent to the provider, not full addresses or customer records.
+- Server validation ensures state belongs to country. Store/tax matching understands full historical location names such as United States / Illinois as US / IL, including common country aliases. Old financial snapshots are not repriced. The tax editor reports matching effective components and taxable services, or explains why location rules/taxability are missing. Configured rules are selected from the saved store location, not a caller's jurisdiction or the customer delivery pin.
+- Classic Teal, Ocean Blue, Royal Plum, Forest Green and Warm Sunset presets can be saved as brand defaults or store overrides. Shared styles respond to the selected palette, including styles that were created before theme selection. The app restores branding from scoped settings on reload, resets to default when context changes, and preserves semantic danger/success colors. Arbitrary color/CSS inputs are not accepted.
+- An explicit CleanandDry sample action creates one labeled test customer and three labeled demo services. The endpoint requires admin access, an active selected store with CleanandDry in its store/brand name and Schaumburg as its city, and uses existing RLS-scoped tables and transaction locks. Repetition creates no duplicates and does not overwrite existing records. Services are exempt by default pending business review; prices are demo prices. No startup seeding, orders or real notifications are performed.
+
+## Tax and production-data requirements
+
+The live CleanandDry record was not retrieved. A read-only Render job was rejected (HTTP 400) and the service is on Render's free plan. No application session or database credential is available in the executor. A Render hosting key does not authenticate to FabClean. The environment draft now declares `FABCLEAN_SESSION_TOKEN` for `fabclean-saas-api.onrender.com`; its value must be supplied securely through environment settings, never chat. Use a signed-in admin session with CleanandDry selected to inspect its actual saved location and complete the authorized data work.
+
+The Schaumburg postal codes used in tests are synthetic fixture choices, not a claim about the live store. No real tax rate was invented or installed. A positive 5% rate is used only in the disposable database to verify Illinois name/code matching and calculated tax. Actual rules require the real store address/jurisdiction, applicable service tax treatment and verified rates/effective dates. ZIP lookup does not establish a tax rate or county jurisdiction. Existing per-service fallback is explained by diagnostics, not silently rewritten.
+
+Live test-customer/services creation and actual tax-rule changes therefore remain pending application access and release of the new endpoint. After release, an authorized user can alternatively select the Schaumburg CleanandDry store, open Brand Defaults & Overrides and use the explicit sample action. That UI operation is separate from code deployment and no production records have been created during this development task.
+
+## Validation and network
+
+The common gate passed 142 backend tests without skips, 33 frontend tests, TypeScript, the 31-route export, load validation and all seven desktop/mobile browser suites. Follow-up checks cover the final country-select changes, normalized location tax calculation, rendered theme colors after reload, dependent selectors, ZIP mapping and scoped/idempotent sample creation. Existing API-session tests retain their authorization/restoration assertions; their style mock was updated for the themed style helper.
+
+Postal-provider responses are controlled in the browser suite and mocked in unit tests. Actual provider availability is not claimed. The environment draft adds `api.zippopotam.us` and `tax.illinois.gov`, preserving existing Render/OSM hosts. Save/publish the draft for provider/reference access in this cloud environment. No external tax-rate provider was integrated and no extra app/API key is needed for ZIP lookup. Native-device checks, live provider lookup and authenticated production tax execution remain unverified.
+
+Repository instructions require explicit approval before merging/deploying this follow-up. Prior approval covered PR #10, not this subsequent request. The running Render application remains at `bf41434` until this maintenance release is accepted.

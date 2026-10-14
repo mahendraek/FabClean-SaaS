@@ -1,3 +1,4 @@
+import { themedStyles } from "@/src/theme";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -67,7 +68,7 @@ export default function GarmentAssembly(){
   </ScrollView>;
 }
 
-const s=StyleSheet.create({
+const s=themedStyles({
   loading:{padding:30},page:{padding:20,maxWidth:1050,width:"100%",alignSelf:"center",gap:16},top:{flexDirection:"row",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"},back:{flexDirection:"row",gap:7,alignItems:"center"},backText:{fontWeight:"800",color:colors.ink},brand:{flexDirection:"row",gap:6,alignItems:"center"},brandText:{fontWeight:"900",color:colors.ink},
   header:{backgroundColor:"#fff",borderWidth:1,borderColor:colors.border,borderRadius:22,padding:22,flexDirection:"row",justifyContent:"space-between",gap:16,alignItems:"flex-start",flexWrap:"wrap"},kicker:{fontSize:10,fontWeight:"900",letterSpacing:1.2,color:colors.primary},title:{fontSize:32,fontWeight:"900",color:colors.ink},sub:{color:colors.muted,marginTop:4},progress:{backgroundColor:colors.primarySoft,borderRadius:14,padding:12,minWidth:120,alignItems:"center"},progressValue:{fontSize:26,fontWeight:"900",color:colors.primaryDark},progressLabel:{fontSize:11,fontWeight:"800",color:colors.muted},
   scanPanel:{backgroundColor:"#fff",borderWidth:1,borderColor:colors.border,borderRadius:16,padding:12,flexDirection:"row",gap:8,alignItems:"center",flexWrap:"wrap"},scanBox:{flex:1,minWidth:260,borderWidth:1,borderColor:colors.border,borderRadius:11,flexDirection:"row",alignItems:"center",paddingHorizontal:10},input:{flex:1,padding:11},scanBtn:{backgroundColor:colors.primary,borderRadius:11,minHeight:44,paddingHorizontal:18,justifyContent:"center"},scanText:{color:"#fff",fontWeight:"900"},

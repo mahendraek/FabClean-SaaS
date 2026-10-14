@@ -1,3 +1,4 @@
+import { themedStyles } from "@/src/theme";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
@@ -81,7 +82,7 @@ export default function PickupSchedule(){
   </ScrollView>;
 }
 
-const s=StyleSheet.create({
+const s=themedStyles({
   page:{padding:20,maxWidth:1100,width:"100%",alignSelf:"center",gap:16},top:{flexDirection:"row",justifyContent:"space-between",alignItems:"center"},back:{flexDirection:"row",gap:7,alignItems:"center"},backText:{fontWeight:"800",color:colors.ink},brand:{flexDirection:"row",gap:6,alignItems:"center"},brandText:{fontWeight:"900",color:colors.ink},
   header:{backgroundColor:"#fff",borderWidth:1,borderColor:colors.border,borderRadius:22,padding:22,flexDirection:"row",justifyContent:"space-between",alignItems:"center",gap:14},kicker:{fontSize:10,fontWeight:"900",letterSpacing:1.3,color:colors.primary},title:{fontSize:30,fontWeight:"900",color:colors.ink,marginTop:3},sub:{color:colors.muted,marginTop:5},
   filtersPanel:{backgroundColor:"#fff",borderWidth:1,borderColor:colors.border,borderRadius:18,padding:16,gap:10},dateRow:{flexDirection:"row",flexWrap:"wrap",gap:8},todayBtn:{backgroundColor:colors.primary,borderRadius:11,paddingHorizontal:16,justifyContent:"center",minHeight:43},todayText:{color:"#fff",fontWeight:"900"},dateInput:{borderWidth:1,borderColor:colors.border,borderRadius:11,padding:11,minWidth:150},search:{flex:1,minWidth:240,borderWidth:1,borderColor:colors.border,borderRadius:11,padding:11},searchBtn:{backgroundColor:colors.ink,borderRadius:11,paddingHorizontal:18,justifyContent:"center",minHeight:43},searchBtnText:{color:"#fff",fontWeight:"900"},modeRow:{flexDirection:"row",gap:8,flexWrap:"wrap"},modeBtn:{borderWidth:1,borderColor:colors.border,borderRadius:999,paddingHorizontal:13,paddingVertical:8},modeBtnOn:{backgroundColor:colors.primary,borderColor:colors.primary},modeText:{fontWeight:"800",color:colors.ink},modeTextOn:{color:"#fff"},
