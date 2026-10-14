@@ -86,6 +86,50 @@ class NotificationAPITests(unittest.TestCase):
     def consent(self):
         self.prefs(email_opt_in=True, sms_opt_in=True, receipts=True, status_updates=True, consent_note='Synthetic fixture customer consent')
 
+    def whatsapp_consent(self):
+        return self.prefs(whatsapp_opt_in=True,receipts=True,consent_note='Synthetic WhatsApp permission')
+
+    def test_whatsapp_requires_separate_consent_and_never_calls_a_provider(self):
+        path='/api/orders/'+self.order['id']+'/whatsapp-receipt'
+        self.assertEqual(self.f.request(0,'get',path).status_code,409)
+        self.consent();self.assertEqual(self.f.request(0,'get',path).status_code,409)
+        self.assertEqual(self.f.request(0,'put','/api/customers/'+self.cid+'/communication-preferences',{'whatsapp_opt_in':True}).status_code,400)
+        self.whatsapp_consent()
+        self.f.ok(0,'put','/api/settings',{'notifications_enabled':False})
+        with patch.object(n,'provider_send') as send:
+            preview=self.f.ok(0,'get',path)
+            result=self.f.ok(0,'post',path,{'fingerprint':preview['fingerprint']})
+            send.assert_not_called()
+        self.assertEqual(result['phone'],self.order['customer']['phone'])
+        self.assertIn('Total: USD 10.00',result['message'])
+        events=self.f.ok(0,'get','/api/customers/'+self.cid+'/communication-events')['events']
+        self.assertTrue(any(e['event']=='whatsapp_share_prepared' for e in events))
+        self.assertFalse(any(e['event'] in ('sent','delivered') for e in events))
+
+    def test_whatsapp_rechecks_optout_payment_changes_and_recipient_changes(self):
+        self.whatsapp_consent();path='/api/orders/'+self.order['id']+'/whatsapp-receipt'
+        preview=self.f.ok(0,'get',path)
+        self.f.ok(0,'post','/api/orders/'+self.order['id']+'/payments',{'amount':5})
+        self.assertEqual(self.f.request(0,'post',path,{'fingerprint':preview['fingerprint']}).status_code,409)
+        refreshed=self.f.ok(0,'get',path);self.assertEqual(refreshed['receipt']['balance_due'],5)
+        with server.db(maintenance=True) as conn:conn.execute("UPDATE customers SET phone='+15550102030' WHERE id=%s",(self.cid,))
+        self.assertEqual(self.f.request(0,'post',path,{'fingerprint':refreshed['fingerprint']}).status_code,409)
+        current=self.f.ok(0,'get',path)
+        self.prefs(whatsapp_opt_in=False)
+        self.assertEqual(self.f.request(0,'post',path,{'fingerprint':current['fingerprint']}).status_code,409)
+
+    def test_whatsapp_foreign_store_invalid_phone_and_oversized_receipt_fail_closed(self):
+        self.whatsapp_consent();path='/api/orders/'+self.order['id']+'/whatsapp-receipt'
+        for actor in (1,2):
+            self.assertEqual(self.f.request(actor,'get',path).status_code,404)
+            self.assertEqual(self.f.request(actor,'post',path,{'fingerprint':'foreign'}).status_code,404)
+        with server.db(maintenance=True) as conn:conn.execute("UPDATE customers SET phone='5550102030' WHERE id=%s",(self.cid,))
+        self.assertEqual(self.f.request(0,'get',path).status_code,400)
+        with server.db(maintenance=True) as conn:conn.execute("UPDATE customers SET phone='+1 (555) 010-2030' WHERE id=%s",(self.cid,))
+        self.assertEqual(self.f.ok(0,'get',path)['phone'],'+15550102030')
+        with patch.object(n,'render',return_value=('Subject','x'*6001,{})):
+            self.assertEqual(self.f.request(0,'get',path).status_code,400)
+
     def dispatch(self, row):
         return self.f.request(0, 'post', '/api/notifications/outbox/'+row['id']+'/dispatch')
 

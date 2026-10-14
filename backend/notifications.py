@@ -24,7 +24,7 @@ from tenant_scope import ScopedMemoryDict, current_scope
 
 VERSION = "notification-outbox-v1"
 MAX_ATTEMPTS = 3
-PREFERENCE_KEYS = {"email_opt_in", "sms_opt_in", "receipts", "status_updates"}
+PREFERENCE_KEYS = {"email_opt_in", "sms_opt_in", "whatsapp_opt_in", "receipts", "status_updates"}
 DEFAULT_PREFERENCES = {key: False for key in PREFERENCE_KEYS}
 TEMPLATES = {
     "order_received": "Hi {name}, {business_name} received order {order_number}.",
@@ -140,7 +140,7 @@ def update_preferences(s, customer_id, payload, staff):
     if not isinstance(note, str) or len(note) > 500:
         raise HTTPException(400, "Consent note must be at most 500 characters")
     # An explicit affirmative record is required whenever a channel is enabled.
-    if any(payload.get(key) is True for key in ("email_opt_in", "sms_opt_in")) and not note.strip():
+    if any(payload.get(key) is True for key in ("email_opt_in", "sms_opt_in", "whatsapp_opt_in")) and not note.strip():
         raise HTTPException(400, "Record how the customer gave consent before opting in")
     def revised(previous):
         return {**DEFAULT_PREFERENCES, **previous, **{k: v for k, v in payload.items() if k in PREFERENCE_KEYS},
@@ -209,6 +209,27 @@ def render(s, order, kind, payment=None):
             if payment.get("tax_amount"):
                 text += f"\nRefund tax credit: {currency} {float(payment['tax_amount']):.2f}"
     return fields["business_name"] + " · " + kind.replace("_", " ") + " · " + fields["order_number"], text, snapshot
+
+
+def whatsapp_receipt(s, order):
+    """Prepare a manual share only. No provider calls, queue or delivery claim."""
+    customer = current_customer(s, (order.get('customer') or {}).get('id'))
+    if not customer:
+        raise HTTPException(404, 'Customer not found in the selected store')
+    prefs = preferences(s, customer['id'])
+    if not permitted(prefs, 'order_receipt', 'whatsapp'):
+        raise HTTPException(409, 'Record WhatsApp consent and enable receipts in Customer Profile before sharing')
+    raw = str(customer.get('phone') or '').strip()
+    if not re.fullmatch(r'\+[0-9 ()-]+', raw):
+        raise HTTPException(400, 'Save the customer phone with an international country code, for example +15551234567')
+    phone = '+' + re.sub(r'\D', '', raw)
+    if not valid_contact('sms', phone):
+        raise HTTPException(400, 'Save a valid international customer phone number before sharing')
+    _, message, snapshot = render(s, {**order, 'customer': customer}, 'order_receipt')
+    if len(message.encode('utf-8')) > 6000:
+        raise HTTPException(400, 'This receipt is too long for WhatsApp link sharing; use the printed receipt')
+    fingerprint = hashlib.sha256(json.dumps([phone, message, snapshot, prefs.get('updated_at')], sort_keys=True, default=str).encode()).hexdigest()
+    return {'phone': phone, 'message': message, 'receipt': snapshot, 'fingerprint': fingerprint}
 
 
 def enqueue(s, order, kind, staff=None, payment=None, manual=False):
@@ -488,6 +509,29 @@ def register(app, s):
         order = s.get_order(order_id, x_session_token)
         order = order.model_dump(mode="json") if hasattr(order, "model_dump") else dict(order)
         return {"notifications": enqueue(s, order, "order_receipt", staff, manual=True)}
+
+    @app.get('/api/orders/{order_id}/whatsapp-receipt')
+    @s.order_transaction
+    def preview_whatsapp(order_id: str, x_session_token: str | None = Header(default=None)):
+        s.require_permission('orders', x_session_token)
+        order = s.get_order(order_id, x_session_token)
+        order = order.model_dump(mode='json') if hasattr(order, 'model_dump') else dict(order)
+        return whatsapp_receipt(s, order)
+
+    @app.post('/api/orders/{order_id}/whatsapp-receipt')
+    @s.order_transaction
+    def confirm_whatsapp(order_id: str, payload: dict, x_session_token: str | None = Header(default=None)):
+        staff = s.require_permission('orders', x_session_token)
+        if set(payload) != {'fingerprint'} or not isinstance(payload['fingerprint'], str):
+            raise HTTPException(400, 'Confirm the reviewed WhatsApp receipt')
+        order = s.get_order(order_id, x_session_token)
+        order = order.model_dump(mode='json') if hasattr(order, 'model_dump') else dict(order)
+        preview = whatsapp_receipt(s, order)
+        if payload['fingerprint'] != preview['fingerprint']:
+            raise HTTPException(409, 'Receipt, recipient or preferences changed; preview the WhatsApp receipt again')
+        audit(s, order['customer']['id'], 'whatsapp_share_prepared', metadata={'order_id': order_id,
+              'fingerprint': preview['fingerprint'], 'receipt': preview['receipt'], 'prepared_by': staff.get('id')})
+        return preview
 
     @app.get("/api/notifications/outbox")
     def outbox(pending: bool = False, x_session_token: str | None = Header(default=None)):

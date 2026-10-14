@@ -12,7 +12,7 @@ const server=http.createServer((req,res)=>{let file=path.join(root,decodeURIComp
   await page.route('**/api/**',async route=>{const u=new URL(route.request().url()),response=await route.fetch({url:api+u.pathname+u.search});await route.fulfill({response,headers:{...response.headers(),'access-control-allow-origin':'*'}});});
   async function call(method,route,data,token=fixture.token){return page.request.fetch(api+'/api'+route,{method,headers:{'X-Session-Token':token},...(data?{data}:{})});}
   const prefs='/customers/'+fixture.customer+'/communication-preferences';
-  assert.equal((await call('PUT',prefs,{email_opt_in:false,sms_opt_in:false,receipts:false,status_updates:false})).status(),200);
+  assert.equal((await call('PUT',prefs,{email_opt_in:false,sms_opt_in:false,whatsapp_opt_in:false,receipts:false,status_updates:false})).status(),200);
   await page.goto(base+'/customer-profile?id='+fixture.customer);
   await page.getByLabel('Email consent',{exact:true}).waitFor();await page.getByLabel('Email consent',{exact:true}).click();await page.getByLabel('Order and payment receipts',{exact:true}).click();
   assert.equal(await page.getByRole('button',{name:'Save communication preferences',exact:true}).isDisabled(),false,'Draft consent should enable save');
@@ -20,7 +20,22 @@ const server=http.createServer((req,res)=>{let file=path.join(root,decodeURIComp
   await page.getByText('Record how the customer gave consent before opting in',{exact:true}).waitFor();
   await page.getByLabel('Customer consent note',{exact:true}).fill('Synthetic browser fixture consent');saving=page.waitForResponse(r=>new URL(r.url()).pathname==='/api'+prefs&&r.request().method()==='PUT');await page.getByRole('button',{name:'Save communication preferences',exact:true}).click();assert.equal((await saving).status(),200);
   await page.getByText('Communication preferences saved',{exact:true}).waitFor();
+  await page.getByLabel('WhatsApp consent',{exact:true}).click();await page.getByLabel('Customer consent note',{exact:true}).fill('Synthetic WhatsApp sharing consent');saving=page.waitForResponse(r=>new URL(r.url()).pathname==='/api'+prefs&&r.request().method()==='PUT');await page.getByRole('button',{name:'Save communication preferences',exact:true}).click();assert.equal((await saving).status(),200);
+  await page.getByText('Communication preferences saved',{exact:true}).waitFor();
   await page.goto(base+'/order-detail?id='+fixture.order);
+  await page.getByRole('button',{name:'Preview WhatsApp receipt',exact:true}).click();await page.getByText('Review WhatsApp receipt',{exact:true}).waitFor();
+  await page.getByText('Recipient: +15550102030',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'Cancel WhatsApp sharing',exact:true}).click();assert.equal(await page.getByRole('button',{name:'Open WhatsApp',exact:true}).count(),0);
+  await page.getByRole('button',{name:'Preview WhatsApp receipt',exact:true}).click();await page.getByRole('button',{name:'Open WhatsApp',exact:true}).waitFor();
+  // Block the real WhatsApp destination: this test prepares a link, never sends a message.
+  await context.route('https://wa.me/**',route=>route.fulfill({contentType:'text/html',body:'<html><body>Controlled WhatsApp preview</body></html>'}));
+  const opened=page.waitForEvent('popup'),confirmed=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/orders/'+fixture.order+'/whatsapp-receipt'&&r.request().method()==='POST');
+  await page.getByRole('button',{name:'Open WhatsApp',exact:true}).click();assert.equal((await confirmed).status(),200);const popup=await opened;await popup.waitForURL('https://wa.me/**');
+  const link=new URL(popup.url());assert.equal(link.pathname,'/15550102030');assert.match(link.searchParams.get('text'),/Tax: USD 0\.50/);assert.match(link.searchParams.get('text'),/Total: USD 10\.50/);assert.match(link.searchParams.get('text'),/Fixture Illinois \(5%\)/);await popup.close();
+  await page.getByText(/Sending and delivery are not tracked by FabClean/).waitFor();
+  const events=(await (await call('GET','/customers/'+fixture.customer+'/communication-events')).json()).events;assert.ok(events.some(e=>e.event==='whatsapp_share_prepared'));assert.ok(!events.some(e=>e.event==='delivered'));
+  await page.getByRole('button',{name:'Preview WhatsApp receipt',exact:true}).click();await page.getByRole('button',{name:'Open WhatsApp',exact:true}).waitFor();
+  await call('PUT',prefs,{whatsapp_opt_in:false});const revoked=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/orders/'+fixture.order+'/whatsapp-receipt'&&r.request().method()==='POST');await page.getByRole('button',{name:'Open WhatsApp',exact:true}).click();assert.equal((await revoked).status(),409);await page.getByText('Record WhatsApp consent and enable receipts in Customer Profile before sharing',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Queue email/SMS receipt',exact:true}).click();
   await page.getByText('Receipts & notifications',{exact:true}).waitFor();
   const rows=(await (await call('GET','/notifications/outbox')).json()).notifications;
@@ -41,6 +56,6 @@ const server=http.createServer((req,res)=>{let file=path.join(root,decodeURIComp
   await page.reload();await page.getByRole('button',{name:'Look up store tax rate',exact:true}).click();await page.getByText('Fixture provider: Fixture Chicago · 5%',{exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Import verified location rate',exact:true}).isDisabled(),true);
   await page.getByLabel('Verify tax jurisdiction',{exact:true}).click();await page.getByLabel('Verify service taxability',{exact:true}).click();await page.getByRole('button',{name:'Import verified location rate',exact:true}).click();
   await page.screenshot({path:'/tmp/pr11-'+(mobile?'mobile':'desktop')+'.png',fullPage:true});assert.deepEqual(errors,[]);
-  console.log((mobile?'mobile web':'desktop')+': real API consent, receipt tax totals, cancel/opt-out, foreign denial, sender/templates and controlled provider review UI passed');await context.close();
+  console.log((mobile?'mobile web':'desktop')+': manual WhatsApp preview/cancel/link/opt-out, receipt tax totals, real API consent, foreign denial, sender/templates and controlled provider review UI passed');await context.close();
  }
 }finally{await browser.close();server.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

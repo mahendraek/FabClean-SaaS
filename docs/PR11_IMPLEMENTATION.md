@@ -1,4 +1,4 @@
-# PR #11 — receipts, consent and location tax completion
+# PR #11 — manual WhatsApp receipts, consent and location tax completion
 
 Implementation branch: `codex/pr-11-receipts-location-taxes`, based on accepted main `4b983a1`. Development is authorized; merge and deployment are not. Publication and final validation are recorded in the development tracker.
 
@@ -6,7 +6,19 @@ Implementation commit: `5388cc3`; planning ancestry merge: `bc2a050`. Both devel
 
 ## Behavior
 
-Customers start opted out of both email and SMS. Customer Profile records channel consent, separate receipt/status preferences, a consent note and an append-only audit. Enabling a channel requires an affirmative note. Preferences and notifications belong to the selected store; related customer/order IDs and PostgreSQL forced RLS prevent foreign-store access.
+### Manual WhatsApp sharing — selected free messaging workflow
+
+The user selected manual WhatsApp sharing on 14 October 2026. Staff use their own WhatsApp app/Web account; there are no messaging-provider API credentials or service fees for this integration. WhatsApp sharing does not require the optional email/SMS worker or notification-enabled setting.
+
+In Customer Profile, record **WhatsApp consent**, **Order and payment receipts**, and an affirmative consent note. In Order Details, select **Preview WhatsApp receipt**, review the international recipient number and full saved tax/current payment totals, then select **Open WhatsApp**. Staff still must check the recipient and tap **Send** inside WhatsApp. **Cancel WhatsApp sharing** closes the preview without contacting WhatsApp.
+
+The server checks selected-store order/customer visibility and consent for both preview and confirmation. Confirmation checks a fingerprint covering recipient, consent revision, rendered content and financial snapshot, rejecting changed payments, phone, preferences or branding. Only explicitly international numbers are accepted; common spaces/parentheses/dashes are normalized without guessing a country code. Oversized receipts are rejected rather than truncating tax evidence. A confirmed preparation appends `whatsapp_share_prepared` with its financial snapshot to the existing forced-RLS, append-only communication audit. No provider sends, `sent`/`delivered` status or automatic queue rows are created by sharing.
+
+Desktop/mobile browser checks use real local API calls and intercept the `wa.me` destination. They verify preview/cancel, encoded recipient/message/tax amounts, consent revoked between preview/open and the absence of delivery claims. Unit tests cover international-number validation, hostile phone paths, safe Unicode/query encoding and receipt-size limits. Physical-device WhatsApp handoff and actual message sending are unrun.
+
+### Optional email/SMS delivery
+
+Customers start opted out of WhatsApp, email and SMS. Customer Profile records channel consent, separate receipt/status preferences, a consent note and an append-only audit. Enabling a channel requires an affirmative note. Preferences and notifications belong to the selected store; related customer/order IDs and PostgreSQL forced RLS prevent foreign-store access.
 
 Order creation enqueues order-received messages and order receipts when notifications are enabled. Payment/refund/adjustment transactions enqueue payment receipts; ready-for-pickup transitions enqueue status messages. These writes share the operational database transaction; external provider requests occur only after a durable dispatch claim. An explicit receipt action captures current order/payment totals under the order lock. Repeated requests for the same financial/contact/consent/template snapshot return the same queue rows.
 
@@ -46,5 +58,7 @@ Run `scripts/validate.sh` from the repository with a disposable local `FABCLEAN_
 The gate includes real PostgreSQL migration/isolation/receipt/consent/concurrency tests, controlled provider requests and signed webhook tests, the load gate, frontend unit tests, TypeScript, Expo web export and eight desktop/mobile browser suites. Notification browser flows use real local API calls for consent, financial receipt totals, cancellation/opt-out and settings; only external provider preview/import UI responses are controlled. Native devices, actual free-provider lookup, authenticated target-store tax execution and real message delivery remain unrun. See the tracker for the final run results.
 
 Final gate passed on 14 October 2026: 163 backend tests with no skips, 33 frontend tests, no TypeScript diagnostics, 32 exported routes and all eight browser suites on desktop/mobile web. Load validation completed 160 requests with zero errors, 106.12 requests/second and worst p95 108.8 ms.
+
+After the user's WhatsApp selection, the updated full gate passed on 14 October 2026: 166 backend tests without skips, 36 frontend tests, TypeScript, 32 exported routes and all eight desktop/mobile browser suites. The WhatsApp destination was intercepted; no real messages were sent. Load validation completed 160 requests with zero errors, 103.4 requests/second and worst p95 112.77 ms. No new dependencies or database migration are needed for WhatsApp; preferences use the existing scoped JSON document and audit table.
 
 The cloud draft preserves installation instructions, updates startup instructions/test counts and adds candidate provider research domains plus `api.sendgrid.com`/`api.twilio.com`. Optional personal SendGrid/Twilio secret requirements and non-secret sender/account/webhook-key variable requirements are saved without values. Runtime policy remains unchanged until the user saves the environment settings; publication is separate. No tax-provider key is requested until a genuinely free supported provider is confirmed.
