@@ -37,6 +37,8 @@ The implementation adds forced PostgreSQL row-level security on 21 operational t
 
 **Next after PR #11 review and provider acceptance:** PR #12 — consolidated reporting and exports. It has not started.
 
+**PR #11 publication:** implementation `5388cc3`, planning ancestry merge `bc2a050`; `codex/pr-11-receipts-location-taxes`, `roadmap/notifications-receipts` and the PR #11 Git head ref independently verified at `bc2a050`. The planning merge has the same tree as the validated implementation. Main remains `4b983a1`. GitHub API metadata and title/body editing returned Forbidden; current review/CI/open/closed flags are not verified. Documentation-only follow-ups preserve these publication and acceptance details.
+
 **PR #9 revalidation:** authenticated Git verified both development branches and PR #9 head at `7d610ae` (including the CI browser-cache fix), while main remains `04a6d8e`. A fresh disposable PostgreSQL 17 run passed the full gate: 119 backend tests without skips, 26 frontend tests, TypeScript, 30-route export, five desktop/mobile browser suites and zero-error load validation. Development is complete; subsequent merge acceptance is recorded above. Hosted CI/review metadata remains Forbidden. See [fresh verification](PR9_IMPLEMENTATION.md#fresh-checkout-verification).
 
 ## Sequential PR queue

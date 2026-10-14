@@ -2,6 +2,8 @@
 
 Implementation branch: `codex/pr-11-receipts-location-taxes`, based on accepted main `4b983a1`. Development is authorized; merge and deployment are not. Publication and final validation are recorded in the development tracker.
 
+Implementation commit: `5388cc3`; planning ancestry merge: `bc2a050`. Both development branches (`codex/pr-11-receipts-location-taxes`, `roadmap/notifications-receipts`) and PR #11's Git head ref were independently verified at `bc2a050`; its tree matches the validated implementation. Main remains `4b983a1`. GitHub API metadata access and title/body editing returned Forbidden, so open/closed/review/hosted-CI flags are unverified. Subsequent documentation commits record this evidence without changing the validated application tree.
+
 ## Behavior
 
 Customers start opted out of both email and SMS. Customer Profile records channel consent, separate receipt/status preferences, a consent note and an append-only audit. Enabling a channel requires an affirmative note. Preferences and notifications belong to the selected store; related customer/order IDs and PostgreSQL forced RLS prevent foreign-store access.
@@ -42,3 +44,7 @@ Required external destinations are `api.sendgrid.com`, `api.twilio.com`, and the
 Run `scripts/validate.sh` from the repository with a disposable local `FABCLEAN_TEST_DATABASE_URL`, `PYTHON_BIN=/workspace/.fabclean-venv/bin/python`, Expo cache overrides from AGENTS.md and `CHROMIUM_EXECUTABLE=/workspace/.fabclean-tools/pg/usr/lib/chromium/chromium`.
 
 The gate includes real PostgreSQL migration/isolation/receipt/consent/concurrency tests, controlled provider requests and signed webhook tests, the load gate, frontend unit tests, TypeScript, Expo web export and eight desktop/mobile browser suites. Notification browser flows use real local API calls for consent, financial receipt totals, cancellation/opt-out and settings; only external provider preview/import UI responses are controlled. Native devices, actual free-provider lookup, authenticated target-store tax execution and real message delivery remain unrun. See the tracker for the final run results.
+
+Final gate passed on 14 October 2026: 163 backend tests with no skips, 33 frontend tests, no TypeScript diagnostics, 32 exported routes and all eight browser suites on desktop/mobile web. Load validation completed 160 requests with zero errors, 106.12 requests/second and worst p95 108.8 ms.
+
+The cloud draft preserves installation instructions, updates startup instructions/test counts and adds candidate provider research domains plus `api.sendgrid.com`/`api.twilio.com`. Optional personal SendGrid/Twilio secret requirements and non-secret sender/account/webhook-key variable requirements are saved without values. Runtime policy remains unchanged until the user saves the environment settings; publication is separate. No tax-provider key is requested until a genuinely free supported provider is confirmed.
