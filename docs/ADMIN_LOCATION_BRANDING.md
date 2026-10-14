@@ -1,6 +1,6 @@
 # Store location, tax diagnostics and branding follow-up
 
-Requested after PR #10 release on 13 October 2026. Branch `codex/admin-location-tax-branding`, based on main `0d5c2d1`. This is the user's administrative maintenance request; PR #11 remains unstarted. Not merged or deployed.
+Requested after PR #10 release on 13 October 2026. Branch `codex/admin-location-tax-branding`, based on main `0d5c2d1`. This is the user's administrative maintenance request; PR #11 remains unstarted. Accepted with explicit user approval and merged into main at `930a43efd068261c0e6358a2dfecc323641c19ad`; both Render services are live at this exact commit on 14 October 2026.
 
 ## Delivered code
 
@@ -16,7 +16,7 @@ The live CleanandDry record was not retrieved. A read-only Render job was reject
 
 The Schaumburg postal codes used in tests are synthetic fixture choices, not a claim about the live store. No real tax rate was invented or installed. A positive 5% rate is used only in the disposable database to verify Illinois name/code matching and calculated tax. Actual rules require the real store address/jurisdiction, applicable service tax treatment and verified rates/effective dates. ZIP lookup does not establish a tax rate or county jurisdiction. Existing per-service fallback is explained by diagnostics, not silently rewritten.
 
-Live test-customer/services creation and actual tax-rule changes therefore remain pending application access and release of the new endpoint. After release, an authorized user can alternatively select the Schaumburg CleanandDry store, open Brand Defaults & Overrides and use the explicit sample action. That UI operation is separate from code deployment and no production records have been created during this development task.
+Live test-customer/services creation and actual tax-rule changes therefore remain pending application access. The endpoint is now live; an authorized user can alternatively select the Schaumburg CleanandDry store, open Brand Defaults & Overrides and use the explicit sample action. That UI operation is separate from code deployment and no production records have been created during this development task.
 
 ## Validation and network
 
@@ -24,4 +24,4 @@ The common gate passed 142 backend tests without skips, 33 frontend tests, TypeS
 
 Postal-provider responses are controlled in the browser suite and mocked in unit tests. Actual provider availability is not claimed. The environment draft adds `api.zippopotam.us` and `tax.illinois.gov`, preserving existing Render/OSM hosts. Save/publish the draft for provider/reference access in this cloud environment. No external tax-rate provider was integrated and no extra app/API key is needed for ZIP lookup. Native-device checks, live provider lookup and authenticated production tax execution remain unverified.
 
-Repository instructions require explicit approval before merging/deploying this follow-up. Prior approval covered PR #10, not this subsequent request. The running Render application remains at `bf41434` until this maintenance release is accepted.
+The user explicitly approved this maintenance release. Both services are verified live at `930a43efd068261c0e6358a2dfecc323641c19ad`; public health, schema, authentication/CORS, page and fresh-bundle checks pass. See [deployment evidence](DEPLOYMENT_STATUS.md). Production sample/tax writes were not performed; application access and verified jurisdiction/rates remain required.

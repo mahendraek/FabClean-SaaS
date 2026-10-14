@@ -1,8 +1,23 @@
 # Render deployment status
 
-Updated: 13 October 2026.
+Updated: 14 October 2026.
 
-## Current live release — PR #10
+## Current live release — admin location, taxes and branding maintenance
+
+The user explicitly approved merge and deployment. Maintenance branch `codex/admin-location-tax-branding` was merged into main at `930a43efd068261c0e6358a2dfecc323641c19ad` and independently verified through authenticated Git. The merged tree exactly matches validated head `4380b4f`: 142 backend tests without skips, 33 frontend tests, TypeScript, 31-route export, seven desktop/mobile suites and zero-error local load validation. See [implementation and outstanding data work](ADMIN_LOCATION_BRANDING.md).
+
+Authenticated Render API confirms both services **live** at that exact merge. Existing credentials, service settings and automatic deployment off were preserved. GitHub hosted review/CI metadata remains unverified; this uses the authorized manual-release fallback.
+
+| Service | Public URL | Service ID | Live deployment | Finished (India time) |
+| --- | --- | --- | --- | --- |
+| API | https://fabclean-saas-api.onrender.com | `srv-db3nmqij9qps738d2qkg` | `dep-db7gnrqj9qps73cdev90` | 2026-10-14 10:29:39 IST |
+| Web | https://fabclean-saas-web.onrender.com | `srv-db3nmv60tbcc73895n1g` | `dep-db7gnrqj9qps73cdevvg` | 2026-10-14 10:30:51 IST |
+
+Public checks pass: API health reports PostgreSQL; OpenAPI publishes location options, postal lookup and the scoped sample endpoint. Unauthenticated calls return 401 with approved-origin CORS and no-store; trusted preflight succeeds and untrusted preflight returns 400. Homepage, store administration, taxes and configuration pages return 200. Fresh published JavaScript contains dependent selectors, postal lookup, theme presets and the explicit sample action.
+
+No production sample records or real tax rates were created. Live CleanandDry location inspection and data changes remain pending an application admin session, which is absent from this environment. An authorized user can select CleanandDry in Schaumburg and use the sample action under Brand Defaults & Overrides. Exact jurisdiction, service tax treatment and rates must be verified before tax-rule changes. Live postal-provider lookup and authenticated production flows remain unverified. Documentation-only follow-up leaves the running application at `930a43e`.
+
+## Previous release — PR #10 (historical evidence)
 
 The user explicitly authorized merge and deployment. PR #10 was merged into main at `bf41434191f7beaf0650600d2d99fa55c965040a`, independently verified through authenticated Git. The merged tree exactly matches validated head `569b746`: 136 backend tests without skips, 31 frontend tests, clean TypeScript, 31-route Expo export, six desktop/mobile browser suites and zero-error load validation. See [implementation and rollout notes](PR10_IMPLEMENTATION.md).
 
