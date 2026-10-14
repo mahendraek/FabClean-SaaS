@@ -3,6 +3,8 @@ import configuration
 import coverage
 import locations
 import sample_data
+import notifications
+import tax_provider
 import base64
 import json
 import os
@@ -28,9 +30,6 @@ from fastapi.responses import Response
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
-from twilio.rest import Client as TwilioClient
-from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail
 
 from models import Service, Order, OrderCreate, Customer, CustomerCreate
 from seed import SERVICES
@@ -118,6 +117,10 @@ def validate_order_references(payload: dict, x_session_token):
 DEFAULT_SETTINGS = {
     "business_name": "FabClean Demo Laundry",
     "delivery_fee_taxable": False,
+    "notifications_enabled": False,
+    "notification_templates": {},
+    "notification_email_sender": "",
+    "notification_sms_sender": "",
     "pickup_enabled": False,
     "delivery_enabled": False,
     "rewards_enabled": True,
@@ -175,7 +178,7 @@ async def isolate_request(request: Request, call_next):
     entitlement_token = request_entitlements.set(None)
     try:
         path = request.url.path
-        exempt = path in ("/", "/api/health", "/api/context") or path.startswith(("/api/auth/", "/api/platform/", "/api/brand/stores"))
+        exempt = path in ("/", "/api/health", "/api/context", "/api/notifications/webhooks/sendgrid") or path.startswith(("/api/auth/", "/api/platform/", "/api/brand/stores"))
         if path.startswith("/api/") and not exempt and request.method != "OPTIONS":
             staff = get_current_staff(request.headers.get("x-session-token"))
             if not staff:
@@ -243,6 +246,9 @@ def init_db():
             configuration.install(conn)
             taxes.install(conn)
             coverage.install(conn)
+            notifications.install(conn)
+            notifications.install_delivery_events(conn)
+            tax_provider.install(conn)
             return
         conn.execute("""
             CREATE TABLE IF NOT EXISTS app_settings (
@@ -745,6 +751,9 @@ def init_db():
             configuration.install(conn)
             taxes.install(conn)
             coverage.install(conn)
+            notifications.install(conn)
+            notifications.install_delivery_events(conn)
+            tax_provider.install(conn)
 
 @app.on_event("startup")
 def startup():
@@ -1971,6 +1980,8 @@ def create_order(payload: OrderCreate, x_session_token: str | None = Header(defa
         if applied_offer:
             configuration.consume_offer(sys.modules[__name__],None,applied_offer)
         ensure_order_garments(order_id)
+        notifications.enqueue(sys.modules[__name__], order.model_dump(mode="json"), "order_received", staff)
+        notifications.enqueue(sys.modules[__name__], order.model_dump(mode="json"), "order_receipt", staff)
         return order
 
     data = order.model_dump(mode="json")
@@ -2111,6 +2122,7 @@ def create_order_payment(order_id: str, payload: dict, x_session_token: str | No
     status=sync_order_payment_status(order_id,order_total)
     record_order_event(order_id,"payment_recorded",None,amount,f"{kind.title()} via {method}",{"receipt_number":receipt,"staff_id":staff.get("id"),"staff_name":staff.get("name","")})
     _,paid,balance=payment_totals(order_id,order_total)
+    notifications.enqueue(sys.modules[__name__], data, "payment_receipt", staff, item)
     return {"payment":item,"paid_total":paid,"balance_due":balance,"payment_status":status}
 
 def validate_order_readiness(order_id: str, status):
@@ -2166,9 +2178,11 @@ def update_order(order_id: str, payload: dict, x_session_token: str | None = Hea
         order_obj = memory_orders.get(order_id)
         if not order_obj:
             raise HTTPException(404, "Order not found")
-        _, data = apply(order_obj.model_dump(mode="json"))
+        before, data = apply(order_obj.model_dump(mode="json"))
         updated = Order(**data)
         memory_orders[order_id] = updated
+        if before.get('status') != data.get('status') and data.get('status') == 'ready_for_pickup':
+            send_critical_order_notifications(data, 'ready_for_pickup', staff)
         return updated
 
     with db() as conn:
@@ -3217,61 +3231,10 @@ def notification_provider_status(x_session_token: str | None = Header(default=No
         "automatic_stages": ["order_received","ready_for_pickup"],
     }
 
-CRITICAL_NOTIFICATION_TEMPLATES = {
-    "order_received": {
-        "subject": "FabClean order received",
-        "message": "Hi {name}, we received your FabClean order {order_number}. We’ll let you know when it is ready for pickup."
-    },
-    "ready_for_pickup": {
-        "subject": "Your FabClean order is ready",
-        "message": "Hi {name}, your FabClean order {order_number} is ready for pickup."
-    },
-}
-
-def notification_already_sent(order_id: str, notification_type: str, channel: str):
-    if not DATABASE_URL: return False
-    with db() as conn:
-        row=conn.execute("SELECT 1 FROM customer_notifications WHERE order_id=%s AND notification_type=%s AND channel=%s AND status='sent' LIMIT 1",(order_id,notification_type,channel)).fetchone()
-    return bool(row)
-
-def log_customer_message(order: dict, notification_type: str, channel: str, message: str, status: str, staff: dict | None = None, provider_message_id: str = "", error_message: str = ""):
-    if not DATABASE_URL: return
-    customer=order.get("customer") or {}
-    with db() as conn:
-        conn.execute("INSERT INTO customer_notifications (id,customer_id,order_id,notification_type,channel,message,status,staff_id,staff_name,provider_message_id,error_message,sent_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,CASE WHEN %s='sent' THEN NOW() ELSE NULL END)",
-            (str(uuid.uuid4()),customer.get("id"),order.get("id"),notification_type,channel,message,status,(staff or {}).get("id"),(staff or {}).get("name",""),provider_message_id,error_message,status))
-
 def send_critical_order_notifications(order: dict, notification_type: str, staff: dict | None = None):
-    template=CRITICAL_NOTIFICATION_TEMPLATES.get(notification_type)
-    if not template: return
-    customer=order.get("customer") or {}
-    name=customer.get("name") or "Customer"
-    order_number=order.get("order_number") or ""
-    message=template["message"].format(name=name,order_number=order_number)
-    subject=template["subject"]
-
-    email=(customer.get("email") or "").strip()
-    if email and SENDGRID_API_KEY and SENDGRID_FROM_EMAIL and not notification_already_sent(order.get("id"),notification_type,"email"):
-        try:
-            mail=Mail(from_email=SENDGRID_FROM_EMAIL,to_emails=email,subject=subject,plain_text_content=message)
-            response=SendGridAPIClient(SENDGRID_API_KEY).send(mail)
-            if 200 <= int(response.status_code) < 300:
-                log_customer_message(order,notification_type,"email",message,"sent",staff,str(response.headers.get("X-Message-Id","")))
-            else:
-                log_customer_message(order,notification_type,"email",message,"failed",staff,"",f"SendGrid status {response.status_code}")
-        except Exception as exc:
-            log_customer_message(order,notification_type,"email",message,"failed",staff,"",str(exc)[:300])
-
-    phone=(customer.get("phone") or "").strip()
-    if phone and TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_FROM_NUMBER and not notification_already_sent(order.get("id"),notification_type,"sms"):
-        if not phone.startswith("+"):
-            log_customer_message(order,notification_type,"sms",message,"failed",staff,"","Phone must be in E.164 format, for example +12244334497")
-        else:
-            try:
-                sms=TwilioClient(TWILIO_ACCOUNT_SID,TWILIO_AUTH_TOKEN).messages.create(body=message,from_=TWILIO_FROM_NUMBER,to=phone)
-                log_customer_message(order,notification_type,"sms",message,"sent",staff,str(sms.sid or ""))
-            except Exception as exc:
-                log_customer_message(order,notification_type,"sms",message,"failed",staff,"",str(exc)[:300])
+    notifications.enqueue(sys.modules[__name__], order, notification_type, staff)
+    if notification_type == "order_received":
+        notifications.enqueue(sys.modules[__name__], order, "order_receipt", staff)
 
 NOTIFICATION_TEMPLATES = {
     "pickup_reminder":"Hi {name}, this is a reminder about your upcoming FabClean pickup.",
@@ -3321,7 +3284,7 @@ def prepare_notification(payload: dict, x_session_token: str | None = Header(def
 def customer_notifications(customer_id: str, x_session_token: str | None = Header(default=None)):
     require_permission("customers",x_session_token)
     get_customer(customer_id,x_session_token)
-    if not DATABASE_URL: return {"notifications": [dict(r) for r in memory_catalogs["customer_notifications"].values() if r.get("customer_id") == customer_id]}
+    if not DATABASE_URL: return {"notifications": [dict(r) for r in [*memory_catalogs["customer_notifications"].values(), *notifications.memory_outbox.values()] if r.get("customer_id") == customer_id]}
     with db() as conn:
         rows=conn.execute("SELECT * FROM customer_notifications WHERE customer_id=%s ORDER BY created_at DESC",(customer_id,)).fetchall()
     return {"notifications":[dict(r) for r in rows]}
@@ -3329,6 +3292,8 @@ def customer_notifications(customer_id: str, x_session_token: str | None = Heade
 @app.post("/api/notifications/{notification_id}/resend")
 def resend_notification(notification_id: str, x_session_token: str | None = Header(default=None)):
     staff=require_permission("orders",x_session_token)
+    if not DATABASE_URL or notifications.load(sys.modules[__name__],notification_id).get("event_key"):
+        return notifications.dispatch(sys.modules[__name__],notification_id)
     if not DATABASE_URL: raise HTTPException(400,"Notification history requires database mode")
     with db() as conn:
         current=conn.execute("SELECT * FROM customer_notifications WHERE id=%s",(notification_id,)).fetchone()
@@ -3534,3 +3499,5 @@ coverage.register(app, sys.modules[__name__])
 locations.register(app, sys.modules[__name__])
 
 sample_data.register(app, sys.modules[__name__])
+notifications.register(app, sys.modules[__name__])
+tax_provider.register(app, sys.modules[__name__])

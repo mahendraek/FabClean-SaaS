@@ -85,12 +85,12 @@ class TaxAPITests(unittest.TestCase):
         self.seed();order=self.create();self.f.ok(0,'post','/api/orders/'+order['id']+'/payments',{'amount':order['total']})
         with ThreadPoolExecutor(max_workers=2) as pool:results=list(pool.map(lambda _:self.f.request(0,'post','/api/orders/'+order['id']+'/payments',{'amount':8,'transaction_type':'refund'}),range(2)))
         self.assertEqual(sorted(r.status_code for r in results),[200,409])
-    def test_delivery_fee_policy_and_legacy_service_fallback(self):
-        q=self.estimate().json();self.assertEqual(q['tax_snapshot']['source'],'legacy_service_rates');self.seed();self.f.ok(0,'put','/api/settings',{'delivery_fee_taxable':True});self.assertEqual(self.estimate(delivery_fee=2).json()['tax'],.76)
+    def test_delivery_fee_policy_and_missing_location_rules(self):
+        self.assertEqual(self.estimate().status_code,409);self.seed();self.f.ok(0,'put','/api/settings',{'delivery_fee_taxable':True});self.assertEqual(self.estimate(delivery_fee=2).json()['tax'],.76)
     def test_legacy_order_preserved_until_pricing_changes(self):
-        order=self.create()
+        self.seed();order=self.create()
         with server.db(maintenance=True) as conn:conn.execute("UPDATE orders SET payload=(payload-'tax_snapshot')||%s::jsonb WHERE id=%s",(json.dumps({'tax':3,'total':13}),order['id']))
-        self.seed();legacy=self.f.ok(0,'get','/api/orders/'+order['id']);q=self.estimate(order_id=order['id'],items=legacy['items']).json();self.assertEqual(q['total'],13);updated=self.f.ok(0,'put','/api/orders/'+order['id'],{'notes':'Keep history','items':legacy['items']});self.assertEqual(updated['tax'],3)
+        legacy=self.f.ok(0,'get','/api/orders/'+order['id']);q=self.estimate(order_id=order['id'],items=legacy['items']).json();self.assertEqual(q['total'],13);updated=self.f.ok(0,'put','/api/orders/'+order['id'],{'notes':'Keep history','items':legacy['items']});self.assertEqual(updated['tax'],3)
         updated=self.f.ok(0,'put','/api/orders/'+order['id'],{'items':[{**legacy['items'][0],'quantity':2}]});self.assertEqual(updated['tax'],1.25)
     def test_quick_dropoff_rates_are_captured_when_first_priced(self):
         order=self.create(items=[],quick_dropoff=True,bag_count=1);self.seed();edited=self.f.ok(0,'put','/api/orders/'+order['id'],{'items':self.items,'quick_dropoff':False});self.assertEqual(edited['tax'],.63)

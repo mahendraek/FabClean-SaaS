@@ -161,6 +161,7 @@ export default function Admin(){
       <AdminCard icon={<Gear size={21} color={colors.primary}/>} title="Brand Defaults & Overrides" text="Inherited settings, service prices and offers" onPress={()=>router.push("/configuration")}/>
       <AdminCard icon={<Gear size={21} color={colors.primary}/>} title="Delivery Coverage Map" text="Store radius, polygon zones and address eligibility" onPress={()=>router.push("/coverage")}/>
       <AdminCard icon={<Wallet size={21} color={colors.primary}/>} title="Location Taxes" text="Dated tax rules, exemptions and reports" onPress={()=>router.push("/taxes")}/>
+      <AdminCard icon={<Wallet size={21} color={colors.primary}/>} title="Receipts & Notifications" text="Delivery queue, retries and receipt history" onPress={()=>router.push("/notifications")}/>
       <AdminCard icon={<Truck size={21} color={colors.primary}/>} title="Pickup & Delivery" text="Coverage, slots and schedules" onPress={()=>router.push("/scheduling")}/>
       <AdminCard icon={<UsersThree size={21} color={colors.primary}/>} title="Staff & Roles" text="Access and staff permissions" onPress={()=>router.push("/staff")}/>
       <AdminCard icon={<Wallet size={21} color={colors.primary}/>} title="Financial" text="Payments and financial activity" onPress={()=>router.push("/financial")}/>

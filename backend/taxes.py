@@ -85,7 +85,7 @@ def selected(rates,loc,day):
         old=components.get(r['component'])
         if old and specificity==old[0]:raise HTTPException(409,'Ambiguous tax rules; correct overlapping jurisdiction selectors')
         if not old or specificity>old[0]:components[r['component']]=(specificity,r)
-    return [{'rule_id':r['id'],'component':key,'jurisdiction':r['jurisdiction'],'rate':r['rate']} for key,(_,r) in sorted(components.items())]
+    return [{'rule_id':r['id'],'component':key,'jurisdiction':r['jurisdiction'],'rate':r['rate'],**({'provenance':deepcopy(r['provenance'])} if r.get('provenance') else {})} for key,(_,r) in sorted(components.items())]
 
 def allocate(total,weights):
     """Largest remainder in cents, with line index as the deterministic tie breaker."""
@@ -116,8 +116,8 @@ def calculate(s,items,discount=0,delivery_fee=0,frozen=None):
         components=deepcopy(frozen['components']);source=frozen['source']
         if source=='store_rules' and (any(taxable) or (fee_taxable and fee)) and not components:raise HTTPException(409,'Saved jurisdiction has no effective rates for taxable pricing; create a new verified order')
     else:
-        rates=rules(s);components=selected(rates,loc,day);source='store_rules' if rates else 'legacy_service_rates'
-        if rates and (any(taxable) or (fee_taxable and fee)) and (not loc.get('country') or not loc.get('state') or not components):raise HTTPException(409,'No effective tax rules match the verified service store location')
+        rates=rules(s);components=selected(rates,loc,day);source='store_rules'
+        if (any(taxable) or (fee_taxable and fee)) and (not loc.get('country') or not loc.get('state') or not components):raise HTTPException(409,'Configure verified location tax rules before pricing taxable services; per-service rates cannot establish the store jurisdiction')
     discounts=allocate(reduction,bases)
     if fee_taxable and fee:
         if source!='store_rules':raise HTTPException(409,'Configure store tax rules before taxing delivery fees')
@@ -138,7 +138,7 @@ def calculate(s,items,discount=0,delivery_fee=0,frozen=None):
         lines.append({'index':index,'service_id':item['service_id'],'taxable':bool(is_taxable),'service_rate':str(legacy_rate),'base':float(base),'discount':float(off),'taxable_base':float(base-off) if is_taxable else 0,'exemption_reason':None if is_taxable else 'Service is exempt','components':line_components,'tax':round(sum(v['amount'] for v in line_components),2)})
     breakdown=[{**v,'amount':float(v['amount']),'taxable_base':float(v['taxable_base'])} for v in totals.values()]
     tax=sum((money(v['amount']) for v in breakdown),Decimal(0))
-    snapshot={'version':1,'source':source,'service_date':day,'location':loc,'components':components,'lines':lines,'breakdown':breakdown,'delivery_fee_taxable':bool(fee_taxable),'rounding':'line-component HALF_UP cents; proportional discount largest remainder','calculated_at':datetime.now(timezone.utc).isoformat()}
+    snapshot={'version':1,'source':source,'service_date':day,'currency':frozen.get('currency') if frozen else s.get_settings_value().get('currency','USD'),'location':loc,'components':components,'lines':lines,'breakdown':breakdown,'delivery_fee_taxable':bool(fee_taxable),'rounding':'line-component HALF_UP cents; proportional discount largest remainder','calculated_at':datetime.now(timezone.utc).isoformat()}
     return {'subtotal':float(subtotal),'discount':float(reduction),'delivery_fee':float(fee),'tax':float(tax),'total':float(subtotal-reduction+fee+tax),'tax_snapshot':snapshot}
 
 def refund(order,rows,amount):

@@ -17,7 +17,7 @@ memory_brands={}
 memory_lock=RLock()
 memory_overrides=ScopedMemoryDict()
 memory_usage=ScopedMemoryDict()
-SETTING_KEYS={'brand_theme','delivery_fee_taxable','business_name','business_address','business_phone','currency','barcode_mode','service_coverage_mode','service_radius_miles','pickup_delivery_slot_minutes','service_area_notes','hardware_profile','pickup_enabled','delivery_enabled','rewards_enabled','offers_enabled','referrals_enabled','subscriptions_enabled','ai_assistance_enabled'}
+SETTING_KEYS={'notification_templates','notifications_enabled','notification_email_sender','notification_sms_sender','brand_theme','delivery_fee_taxable','business_name','business_address','business_phone','currency','barcode_mode','service_coverage_mode','service_radius_miles','pickup_delivery_slot_minutes','service_area_notes','hardware_profile','pickup_enabled','delivery_enabled','rewards_enabled','offers_enabled','referrals_enabled','subscriptions_enabled','ai_assistance_enabled'}
 OFFER_KEYS={'name','code','discount_type','discount_value','min_order','first_order_only','auto_apply','active','starts_at','ends_at','usage_limit'}
 
 def install(conn):
@@ -52,8 +52,11 @@ def settings(s):
 
 def validate_settings(values):
     if not isinstance(values,dict) or set(values)-SETTING_KEYS:raise HTTPException(400,'Unsupported settings')
+    import notifications
+    notifications.validate_settings(values)
     for key,value in values.items():
         if value is None:continue
+        if key=='notification_templates':continue
         if key=='brand_theme' and value not in ('teal','ocean','plum','forest','sunset'):raise HTTPException(400,'Select a supported brand theme')
         if (key.endswith('_enabled') or key=='delivery_fee_taxable') and type(value) is not bool:raise HTTPException(400,'Capabilities must be booleans')
         if key in ('service_radius_miles','pickup_delivery_slot_minutes'):

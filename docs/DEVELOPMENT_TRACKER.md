@@ -1,6 +1,6 @@
 # FabClean development tracker
 
-Updated: 13 October 2026. This is the canonical work queue for `mahendraek/FabClean-SaaS`.
+Updated: 14 October 2026. This is the canonical work queue for `mahendraek/FabClean-SaaS`.
 Develop one item at a time. Keep future scopes in the backlog; do not implement or merge another roadmap PR as part of the current item.
 
 ## Current work
@@ -31,7 +31,11 @@ The implementation adds forced PostgreSQL row-level security on 21 operational t
 
 **Current administrative maintenance:** user-requested country/state selectors, postal lookup, location-tax diagnostics/normalization, CleanandDry sample action and brand/store theme presets on `codex/admin-location-tax-branding`. Validation: 142 backend tests without skips, 33 frontend tests, TypeScript, 31-route export and seven desktop/mobile suites. Accepted with explicit user approval, merged at `930a43e` and both Render services verified live on 14 October 2026; public smoke checks pass. Actual CleanandDry inspection, sample creation and real tax rules remain pending an application admin session and verified jurisdiction/rates. See [review scope and blockers](ADMIN_LOCATION_BRANDING.md).
 
-**Next:** PR #11 — email/SMS receipts and preferences. No future item has started.
+**Outstanding tax requirement (user correction, 14 October 2026):** location-specific tax behavior is not considered complete for the intended store workflow. PR #9's historical code/merge/test evidence remains recorded above, but actual location/rate configuration and authenticated production execution remain unverified. PR #11 now includes an audit and completion of the remaining location-based tax implementation, verified applicable rates/service tax treatment, and end-to-end order/payment/receipt acceptance. Do not treat synthetic rates or prior deployment smoke checks as completion of this requirement.
+
+**Current PR #11 — location-based tax completion, email/SMS receipts and preferences:** development authorized by the user on 14 October 2026, implemented on `codex/pr-11-receipts-location-taxes` from accepted main `4b983a1`. Includes explicit store-scoped consent, brand templates/store senders, immutable financial/tax/currency receipt snapshots, transactional outbox, durable concurrent dispatch claims, bounded safe retries, signed email delivery/opt-out events, SMS delivery checks, a scoped worker and desktop/mobile controls. New taxable pricing fails closed without matching location rules; historical invoices stay frozen. An optional provider preview/review/import adapter retains provenance and rejects stale/ambiguous/foreign locations and double taxation. Final local validation: 163 backend tests without skips, 33 frontend tests, TypeScript, 32-route web export, all eight desktop/mobile browser suites and a zero-error load gate (106.12 requests/second, worst p95 108.8 ms). Free-provider eligibility/current contract and live API lookup remain blocked by network policy and missing provider credentials; the adapter is tested with controlled responses and is not claimed as a confirmed free integration. Actual target-store tax execution, real email/SMS delivery, native devices and hosted CI/review metadata remain unverified. No merge, deployment, production writes or real messages are authorized/performed. See [implementation and acceptance blockers](PR11_IMPLEMENTATION.md).
+
+**Next after PR #11 review and provider acceptance:** PR #12 — consolidated reporting and exports. It has not started.
 
 **PR #9 revalidation:** authenticated Git verified both development branches and PR #9 head at `7d610ae` (including the CI browser-cache fix), while main remains `04a6d8e`. A fresh disposable PostgreSQL 17 run passed the full gate: 119 backend tests without skips, 26 frontend tests, TypeScript, 30-route export, five desktop/mobile browser suites and zero-error load validation. Development is complete; subsequent merge acceptance is recorded above. Hosted CI/review metadata remains Forbidden. See [fresh verification](PR9_IMPLEMENTATION.md#fresh-checkout-verification).
 
@@ -47,7 +51,7 @@ The implementation adds forced PostgreSQL row-level security on 21 operational t
 | 6 | [#8](https://github.com/mahendraek/FabClean-SaaS/pull/8) | P2 | [Brand defaults/store overrides](roadmap/configuration-inheritance.md) | Merged at `7b193db`; both Render services live; smoke checks passed | #4, #5, #7 |
 | 7 | [#9](https://github.com/mahendraek/FabClean-SaaS/pull/9) | P2 | [Location-aware taxes](roadmap/location-taxes.md) | Merged and Render live at `9e68ce3` | #8 |
 | 8 | [#10](https://github.com/mahendraek/FabClean-SaaS/pull/10) | P2 | [OpenStreetMap delivery coverage](roadmap/service-area-maps.md) | Merged and Render live at `bf41434` | #5, #8 |
-| 9 | [#11](https://github.com/mahendraek/FabClean-SaaS/pull/11) | P2 | [Email/SMS receipts and preferences](roadmap/notifications-receipts.md) | Planned | #4, #8, #9 |
+| 9 | [#11](https://github.com/mahendraek/FabClean-SaaS/pull/11) | P2 | [Location-based tax completion, email/SMS receipts and preferences](roadmap/notifications-receipts.md) | Core locally validated; free-provider acceptance blocked; not merged/deployed | #4, #8, #9 |
 | 10 | [#12](https://github.com/mahendraek/FabClean-SaaS/pull/12) | P2 | [Consolidated reporting/exports](roadmap/cross-store-reporting.md) | Planned | #4, #5, #9 |
 
 The sequence follows the scope documents' P0/P1/P2 priorities and prerequisite work. It is a development sequence, not permission to merge or deploy. PR #3 is listed second because the user selected #4 first.
