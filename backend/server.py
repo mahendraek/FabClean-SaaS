@@ -1,8 +1,9 @@
-import taxes
+import pricing
 import configuration
 import coverage
 import locations
 import sample_data
+import notifications
 import base64
 import json
 import os
@@ -28,9 +29,6 @@ from fastapi.responses import Response
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
-from twilio.rest import Client as TwilioClient
-from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail
 
 from models import Service, Order, OrderCreate, Customer, CustomerCreate
 from seed import SERVICES
@@ -117,7 +115,10 @@ def validate_order_references(payload: dict, x_session_token):
         if not exists: raise HTTPException(404, "Scheduling record not found in the active store")
 DEFAULT_SETTINGS = {
     "business_name": "FabClean Demo Laundry",
-    "delivery_fee_taxable": False,
+    "notifications_enabled": False,
+    "notification_templates": {},
+    "notification_email_sender": "",
+    "notification_sms_sender": "",
     "pickup_enabled": False,
     "delivery_enabled": False,
     "rewards_enabled": True,
@@ -175,7 +176,7 @@ async def isolate_request(request: Request, call_next):
     entitlement_token = request_entitlements.set(None)
     try:
         path = request.url.path
-        exempt = path in ("/", "/api/health", "/api/context") or path.startswith(("/api/auth/", "/api/platform/", "/api/brand/stores"))
+        exempt = path in ("/", "/api/health", "/api/context", "/api/notifications/webhooks/sendgrid") or path.startswith(("/api/auth/", "/api/platform/", "/api/brand/stores"))
         if path.startswith("/api/") and not exempt and request.method != "OPTIONS":
             staff = get_current_staff(request.headers.get("x-session-token"))
             if not staff:
@@ -241,8 +242,9 @@ def init_db():
             install_store_operations(conn)
             install_platform(conn)
             configuration.install(conn)
-            taxes.install(conn)
             coverage.install(conn)
+            notifications.install(conn)
+            notifications.install_delivery_events(conn)
             return
         conn.execute("""
             CREATE TABLE IF NOT EXISTS app_settings (
@@ -743,8 +745,9 @@ def init_db():
             install_store_operations(conn)
             install_platform(conn)
             configuration.install(conn)
-            taxes.install(conn)
             coverage.install(conn)
+            notifications.install(conn)
+            notifications.install_delivery_events(conn)
 
 @app.on_event("startup")
 def startup():
@@ -787,8 +790,8 @@ def get_service_values(include_inactive: bool = False):
                 payload["variants"] = payload.get("variants") or []
                 payload["modifiers"] = payload.get("modifiers") or []
                 payload["minimum_price"] = float(payload.get("minimum_price", 0) or 0)
-                payload["taxable"] = bool(payload.get("taxable", False))
-                payload["tax_rate"] = float(payload.get("tax_rate", 0) or 0)
+                payload.pop("taxable", None)
+                payload.pop("tax_rate", None)
                 payload["express_enabled"] = bool(payload.get("express_enabled", False))
                 payload["express_surcharge_percent"] = float(payload.get("express_surcharge_percent", 0) or 0)
             values.append(payload)
@@ -1876,7 +1879,7 @@ def create_order(payload: OrderCreate, x_session_token: str | None = Header(defa
     if isinstance(customer, dict):
         customer = Customer(**customer)
 
-    subtotal = taxes.calculate(sys.modules[__name__],[i.model_dump() for i in payload.items])["subtotal"]
+    subtotal = pricing.quote([i.model_dump() for i in payload.items])["subtotal"]
     applied_offer = None
     discount = float(payload.discount or 0)
     if payload.promo_code and not capability_enabled("offers_enabled", True):
@@ -1916,8 +1919,8 @@ def create_order(payload: OrderCreate, x_session_token: str | None = Header(defa
                 raise HTTPException(400, "Selected pickup time slot is unavailable")
             if needs_delivery and (not delivery_slot or not delivery_slot["delivery_enabled"]):
                 raise HTTPException(400, "Selected delivery time slot is unavailable")
-    tax_result=taxes.calculate(sys.modules[__name__],[i.model_dump() for i in payload.items],discount,delivery_fee)
-    total=tax_result["total"]
+    price_result=pricing.quote([i.model_dump() for i in payload.items],discount,delivery_fee)
+    total=price_result["total"]
     finalized_items = []
     for index, item in enumerate(payload.items, 1):
         data = item.model_dump()
@@ -1933,8 +1936,8 @@ def create_order(payload: OrderCreate, x_session_token: str | None = Header(defa
         items=finalized_items,
         subtotal=subtotal,
         discount=discount,
-        tax=tax_result["tax"],
-        tax_snapshot=tax_result["tax_snapshot"],
+        tax=0,
+        currency=get_settings_value().get("currency", "USD"),
         total=total,
         payment_method=payload.payment_method,
         payment_status=payload.payment_status,
@@ -1971,6 +1974,8 @@ def create_order(payload: OrderCreate, x_session_token: str | None = Header(defa
         if applied_offer:
             configuration.consume_offer(sys.modules[__name__],None,applied_offer)
         ensure_order_garments(order_id)
+        notifications.enqueue(sys.modules[__name__], order.model_dump(mode="json"), "order_received", staff)
+        notifications.enqueue(sys.modules[__name__], order.model_dump(mode="json"), "order_receipt", staff)
         return order
 
     data = order.model_dump(mode="json")
@@ -2080,7 +2085,7 @@ def create_order_payment(order_id: str, payload: dict, x_session_token: str | No
     try: amount=float(payload.get("amount",0) or 0)
     except (ValueError, TypeError): raise HTTPException(400,"Payment amount must be a finite number")
     if not math.isfinite(amount): raise HTTPException(400,"Payment amount must be a finite number")
-    amount=float(taxes.money(abs(amount)))*(1 if amount>=0 else -1)
+    amount=float(pricing.money(abs(amount)))*(1 if amount>=0 else -1)
     kind=str(payload.get("transaction_type","payment")).lower()
     if kind not in ("payment","refund","adjustment"):
         raise HTTPException(400,"Invalid transaction type")
@@ -2093,24 +2098,24 @@ def create_order_payment(order_id: str, payload: dict, x_session_token: str | No
     method=str(payload.get("payment_method","cash")).lower()
     if method not in ("cash","card","other"):
         raise HTTPException(400,"Invalid payment method")
-    tax_amount=0;tax_breakdown=[]
     if kind=='refund':
         rows,_,_=payment_totals(order_id,order_total)
-        tax_amount,tax_breakdown=taxes.refund(data,rows,abs(amount))
+        pricing.validate_refund(data,rows,abs(amount))
     customer=data.get("customer") or {}
     pid=str(uuid.uuid4())
     receipt="FCR-"+datetime.now(timezone.utc).strftime("%Y%m%d")+"-"+uuid.uuid4().hex[:6].upper()
-    item={"id":pid,"receipt_number":receipt,"order_id":order_id,"customer_id":customer.get("id"),"transaction_type":kind,"payment_method":method,"amount":round(amount,2),"reference_number":str(payload.get("reference_number","")),"notes":str(payload.get("notes","")),"staff_id":staff.get("id"),"staff_name":staff.get("name",""),"tax_amount":tax_amount,"tax_breakdown":tax_breakdown}
+    item={"id":pid,"receipt_number":receipt,"order_id":order_id,"customer_id":customer.get("id"),"transaction_type":kind,"payment_method":method,"amount":round(amount,2),"reference_number":str(payload.get("reference_number","")),"notes":str(payload.get("notes","")),"staff_id":staff.get("id"),"staff_name":staff.get("name","")}
     if not DATABASE_URL:
         item["created_at"]=datetime.now(timezone.utc).isoformat()
         memory_payments.append(item)
     else:
         with db() as conn:
-            row=conn.execute("INSERT INTO payment_transactions (id,receipt_number,order_id,customer_id,transaction_type,payment_method,amount,reference_number,notes,staff_id,staff_name,tax_amount,tax_breakdown) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb) RETURNING *",(pid,receipt,order_id,customer.get("id"),kind,method,amount,item["reference_number"],item["notes"],staff.get("id"),staff.get("name",""),tax_amount,json.dumps(tax_breakdown))).fetchone()
+            row=conn.execute("INSERT INTO payment_transactions (id,receipt_number,order_id,customer_id,transaction_type,payment_method,amount,reference_number,notes,staff_id,staff_name) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *",(pid,receipt,order_id,customer.get("id"),kind,method,amount,item["reference_number"],item["notes"],staff.get("id"),staff.get("name",""))).fetchone()
             item=dict(row)
     status=sync_order_payment_status(order_id,order_total)
     record_order_event(order_id,"payment_recorded",None,amount,f"{kind.title()} via {method}",{"receipt_number":receipt,"staff_id":staff.get("id"),"staff_name":staff.get("name","")})
     _,paid,balance=payment_totals(order_id,order_total)
+    notifications.enqueue(sys.modules[__name__], data, "payment_receipt", staff, item)
     return {"payment":item,"paid_total":paid,"balance_due":balance,"payment_status":status}
 
 def validate_order_readiness(order_id: str, status):
@@ -2146,6 +2151,8 @@ def update_order(order_id: str, payload: dict, x_session_token: str | None = Hea
         before = dict(order)
         monetary=any(key in updates and updates[key]!=order.get(key) for key in ('items','discount','delivery_fee'))
         if monetary:
+            if order.get('tax_snapshot') is not None or order.get('tax', 0):
+                raise HTTPException(409, 'Historical invoices with recorded tax are read-only for repricing; create a new order')
             rows,_,_=payment_totals(order_id,float(order.get('total',0)))
             if any(r.get('transaction_type')=='refund' for r in rows):raise HTTPException(409,'Pricing cannot change after a refund')
         for key, value in updates.items():
@@ -2159,16 +2166,18 @@ def update_order(order_id: str, payload: dict, x_session_token: str | None = Hea
                 item["barcode_value"] = base_barcode + "-" + str(index).zfill(3)
         order["items"] = items
         if monetary:
-            order.update(taxes.calculate(sys.modules[__name__],items,order.get('discount',0),order.get('delivery_fee',0),order.get('tax_snapshot')))
+            order.update(pricing.quote(items,order.get('discount',0),order.get('delivery_fee',0)))
         return before, order
 
     if not DATABASE_URL:
         order_obj = memory_orders.get(order_id)
         if not order_obj:
             raise HTTPException(404, "Order not found")
-        _, data = apply(order_obj.model_dump(mode="json"))
+        before, data = apply(order_obj.model_dump(mode="json"))
         updated = Order(**data)
         memory_orders[order_id] = updated
+        if before.get('status') != data.get('status') and data.get('status') == 'ready_for_pickup':
+            send_critical_order_notifications(data, 'ready_for_pickup', staff)
         return updated
 
     with db() as conn:
@@ -3217,61 +3226,10 @@ def notification_provider_status(x_session_token: str | None = Header(default=No
         "automatic_stages": ["order_received","ready_for_pickup"],
     }
 
-CRITICAL_NOTIFICATION_TEMPLATES = {
-    "order_received": {
-        "subject": "FabClean order received",
-        "message": "Hi {name}, we received your FabClean order {order_number}. We’ll let you know when it is ready for pickup."
-    },
-    "ready_for_pickup": {
-        "subject": "Your FabClean order is ready",
-        "message": "Hi {name}, your FabClean order {order_number} is ready for pickup."
-    },
-}
-
-def notification_already_sent(order_id: str, notification_type: str, channel: str):
-    if not DATABASE_URL: return False
-    with db() as conn:
-        row=conn.execute("SELECT 1 FROM customer_notifications WHERE order_id=%s AND notification_type=%s AND channel=%s AND status='sent' LIMIT 1",(order_id,notification_type,channel)).fetchone()
-    return bool(row)
-
-def log_customer_message(order: dict, notification_type: str, channel: str, message: str, status: str, staff: dict | None = None, provider_message_id: str = "", error_message: str = ""):
-    if not DATABASE_URL: return
-    customer=order.get("customer") or {}
-    with db() as conn:
-        conn.execute("INSERT INTO customer_notifications (id,customer_id,order_id,notification_type,channel,message,status,staff_id,staff_name,provider_message_id,error_message,sent_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,CASE WHEN %s='sent' THEN NOW() ELSE NULL END)",
-            (str(uuid.uuid4()),customer.get("id"),order.get("id"),notification_type,channel,message,status,(staff or {}).get("id"),(staff or {}).get("name",""),provider_message_id,error_message,status))
-
 def send_critical_order_notifications(order: dict, notification_type: str, staff: dict | None = None):
-    template=CRITICAL_NOTIFICATION_TEMPLATES.get(notification_type)
-    if not template: return
-    customer=order.get("customer") or {}
-    name=customer.get("name") or "Customer"
-    order_number=order.get("order_number") or ""
-    message=template["message"].format(name=name,order_number=order_number)
-    subject=template["subject"]
-
-    email=(customer.get("email") or "").strip()
-    if email and SENDGRID_API_KEY and SENDGRID_FROM_EMAIL and not notification_already_sent(order.get("id"),notification_type,"email"):
-        try:
-            mail=Mail(from_email=SENDGRID_FROM_EMAIL,to_emails=email,subject=subject,plain_text_content=message)
-            response=SendGridAPIClient(SENDGRID_API_KEY).send(mail)
-            if 200 <= int(response.status_code) < 300:
-                log_customer_message(order,notification_type,"email",message,"sent",staff,str(response.headers.get("X-Message-Id","")))
-            else:
-                log_customer_message(order,notification_type,"email",message,"failed",staff,"",f"SendGrid status {response.status_code}")
-        except Exception as exc:
-            log_customer_message(order,notification_type,"email",message,"failed",staff,"",str(exc)[:300])
-
-    phone=(customer.get("phone") or "").strip()
-    if phone and TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_FROM_NUMBER and not notification_already_sent(order.get("id"),notification_type,"sms"):
-        if not phone.startswith("+"):
-            log_customer_message(order,notification_type,"sms",message,"failed",staff,"","Phone must be in E.164 format, for example +12244334497")
-        else:
-            try:
-                sms=TwilioClient(TWILIO_ACCOUNT_SID,TWILIO_AUTH_TOKEN).messages.create(body=message,from_=TWILIO_FROM_NUMBER,to=phone)
-                log_customer_message(order,notification_type,"sms",message,"sent",staff,str(sms.sid or ""))
-            except Exception as exc:
-                log_customer_message(order,notification_type,"sms",message,"failed",staff,"",str(exc)[:300])
+    notifications.enqueue(sys.modules[__name__], order, notification_type, staff)
+    if notification_type == "order_received":
+        notifications.enqueue(sys.modules[__name__], order, "order_receipt", staff)
 
 NOTIFICATION_TEMPLATES = {
     "pickup_reminder":"Hi {name}, this is a reminder about your upcoming FabClean pickup.",
@@ -3321,7 +3279,7 @@ def prepare_notification(payload: dict, x_session_token: str | None = Header(def
 def customer_notifications(customer_id: str, x_session_token: str | None = Header(default=None)):
     require_permission("customers",x_session_token)
     get_customer(customer_id,x_session_token)
-    if not DATABASE_URL: return {"notifications": [dict(r) for r in memory_catalogs["customer_notifications"].values() if r.get("customer_id") == customer_id]}
+    if not DATABASE_URL: return {"notifications": [dict(r) for r in [*memory_catalogs["customer_notifications"].values(), *notifications.memory_outbox.values()] if r.get("customer_id") == customer_id]}
     with db() as conn:
         rows=conn.execute("SELECT * FROM customer_notifications WHERE customer_id=%s ORDER BY created_at DESC",(customer_id,)).fetchall()
     return {"notifications":[dict(r) for r in rows]}
@@ -3329,6 +3287,8 @@ def customer_notifications(customer_id: str, x_session_token: str | None = Heade
 @app.post("/api/notifications/{notification_id}/resend")
 def resend_notification(notification_id: str, x_session_token: str | None = Header(default=None)):
     staff=require_permission("orders",x_session_token)
+    if not DATABASE_URL or notifications.load(sys.modules[__name__],notification_id).get("event_key"):
+        return notifications.dispatch(sys.modules[__name__],notification_id)
     if not DATABASE_URL: raise HTTPException(400,"Notification history requires database mode")
     with db() as conn:
         current=conn.execute("SELECT * FROM customer_notifications WHERE id=%s",(notification_id,)).fetchone()
@@ -3528,9 +3488,9 @@ register_platform_routes(app, sys.modules[__name__])
 
 configuration.register(app, sys.modules[__name__])
 
-taxes.register(app, sys.modules[__name__])
 coverage.register(app, sys.modules[__name__])
 
 locations.register(app, sys.modules[__name__])
 
 sample_data.register(app, sys.modules[__name__])
+notifications.register(app, sys.modules[__name__])

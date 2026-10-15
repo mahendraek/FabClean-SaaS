@@ -36,8 +36,6 @@ class Service(BaseModel):
     minimum_price: float = 0
     unit_label: str = ""
     turnaround_hours: int = 48
-    taxable: bool = False
-    tax_rate: float = 0
     express_enabled: bool = False
     express_surcharge_percent: float = 0
     active: bool = True
@@ -87,7 +85,6 @@ class OrderCreate(BaseModel):
     items: List[OrderItem] = Field(default_factory=list)
     notes: str = ""
     discount: float = 0
-    tax: float = 0
     payment_method: str = "cash"
     payment_status: str = "unpaid"
     quick_dropoff: bool = False
@@ -125,7 +122,9 @@ class Order(BaseModel):
     subtotal: float
     discount: float = 0
     tax: float = 0
+    # Read-only compatibility for historical invoices. New orders do not calculate tax.
     tax_snapshot: Optional[dict] = None
+    currency: Optional[str] = None
     total: float
     payment_method: str = "cash"
     payment_status: str = "unpaid"

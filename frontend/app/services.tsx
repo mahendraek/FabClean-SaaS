@@ -9,7 +9,7 @@ import { imageForCategory } from "@/src/service-media";
 
 type Variant={id:string;name:string;price:number;active:boolean};
 type Modifier={id:string;name:string;amount:number;amount_type:"flat"|"percent";active:boolean};
-type Service={id:string;category:string;name:string;description:string;pricing_type:string;base_price:number;minimum_price?:number;unit_label:string;turnaround_hours?:number;taxable?:boolean;tax_rate?:number;express_enabled?:boolean;express_surcharge_percent?:number;variants?:Variant[];modifiers?:Modifier[]};
+type Service={id:string;category:string;name:string;description:string;pricing_type:string;base_price:number;minimum_price?:number;unit_label:string;turnaround_hours?:number;express_enabled?:boolean;express_surcharge_percent?:number;variants?:Variant[];modifiers?:Modifier[]};
 
 export default function Services(){
   const router=useRouter();
@@ -61,9 +61,8 @@ export default function Services(){
           <Text style={s.desc}>{x.description}</Text>
           {x.variants?.filter(v=>v.active).length?<View style={s.detailBox}><Text style={s.detailLabel}>Variants</Text>{x.variants.filter(v=>v.active).slice(0,3).map(v=><Text key={v.id} style={s.detailText}>{v.name} · {"$"+v.price.toFixed(2)}</Text>)}</View>:null}
           {x.modifiers?.filter(m=>m.active).length?<View style={s.detailBox}><Text style={s.detailLabel}>Common upcharges</Text>{x.modifiers.filter(m=>m.active).slice(0,3).map(m=><Text key={m.id} style={s.detailText}>{m.name} · {m.amount_type==="percent"?m.amount+"%":"+$"+m.amount.toFixed(2)}</Text>)}</View>:null}
-          {(x.minimum_price||x.taxable||x.express_enabled)?<View style={s.flags}>
+          {(x.minimum_price||x.express_enabled)?<View style={s.flags}>
             {x.minimum_price?<Text style={s.flag}>{"Min $"+x.minimum_price.toFixed(2)}</Text>:null}
-            {x.taxable?<Text style={s.flag}>{(x.tax_rate||0).toFixed(2)+"% tax"}</Text>:null}
             {x.express_enabled?<Text style={s.flag}>{"Express +"+(x.express_surcharge_percent||0).toFixed(0)+"%"}</Text>:null}
           </View>:null}
           <View style={s.bottom}>

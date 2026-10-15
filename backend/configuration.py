@@ -17,7 +17,7 @@ memory_brands={}
 memory_lock=RLock()
 memory_overrides=ScopedMemoryDict()
 memory_usage=ScopedMemoryDict()
-SETTING_KEYS={'brand_theme','delivery_fee_taxable','business_name','business_address','business_phone','currency','barcode_mode','service_coverage_mode','service_radius_miles','pickup_delivery_slot_minutes','service_area_notes','hardware_profile','pickup_enabled','delivery_enabled','rewards_enabled','offers_enabled','referrals_enabled','subscriptions_enabled','ai_assistance_enabled'}
+SETTING_KEYS={'notification_templates','notifications_enabled','notification_email_sender','notification_sms_sender','brand_theme','business_name','business_address','business_phone','currency','barcode_mode','service_coverage_mode','service_radius_miles','pickup_delivery_slot_minutes','service_area_notes','hardware_profile','pickup_enabled','delivery_enabled','rewards_enabled','offers_enabled','referrals_enabled','subscriptions_enabled','ai_assistance_enabled'}
 OFFER_KEYS={'name','code','discount_type','discount_value','min_order','first_order_only','auto_apply','active','starts_at','ends_at','usage_limit'}
 
 def install(conn):
@@ -40,7 +40,13 @@ def load(s,brand=False):
     else:
         with s.db() as conn:
             row=conn.execute('SELECT payload,revision FROM '+('brand_configuration WHERE business_id=%s' if brand else 'store_configuration WHERE business_id=%s AND location_id=%s'),(scope()[0],) if brand else scope()).fetchone()
-    return deepcopy(row) if row else {'payload':deepcopy(EMPTY),'revision':0}
+    result = deepcopy(row) if row else {'payload':deepcopy(EMPTY),'revision':0}
+    result['payload']['settings'].pop('delivery_fee_taxable', None)
+    for section in ('services',):
+        for item in result['payload'][section].values():
+            if isinstance(item, dict):
+                item.pop('taxable', None); item.pop('tax_rate', None)
+    return result
 
 def settings(s):
     brand=load(s,True)['payload']['settings']
@@ -48,19 +54,23 @@ def settings(s):
     else:
         with s.db() as conn:row=conn.execute("SELECT payload FROM app_settings WHERE id='business'").fetchone()
         local=row['payload'] if row else {}
+    local = {k:v for k,v in local.items() if k != 'delivery_fee_taxable'}
     return {**s.DEFAULT_SETTINGS,**brand,**local},local
 
 def validate_settings(values):
     if not isinstance(values,dict) or set(values)-SETTING_KEYS:raise HTTPException(400,'Unsupported settings')
+    import notifications
+    notifications.validate_settings(values)
     for key,value in values.items():
         if value is None:continue
+        if key=='notification_templates':continue
         if key=='brand_theme' and value not in ('teal','ocean','plum','forest','sunset'):raise HTTPException(400,'Select a supported brand theme')
-        if (key.endswith('_enabled') or key=='delivery_fee_taxable') and type(value) is not bool:raise HTTPException(400,'Capabilities must be booleans')
+        if (key.endswith('_enabled')) and type(value) is not bool:raise HTTPException(400,'Capabilities must be booleans')
         if key in ('service_radius_miles','pickup_delivery_slot_minutes'):
             if type(value) not in (int,float) or not math.isfinite(value) or value<0 or value>10000 or (key=='pickup_delivery_slot_minutes' and (value<15 or value>1440 or value%1)):raise HTTPException(400,'Invalid fulfillment rule')
         elif key=='hardware_profile':
             if not isinstance(value,dict) or len(json.dumps(value))>10000:raise HTTPException(400,'Invalid hardware profile')
-        elif not (key.endswith('_enabled') or key=='delivery_fee_taxable'):
+        elif not (key.endswith('_enabled')):
             if not isinstance(value,str) or len(value)>2000:raise HTTPException(400,'Invalid setting text')
         if key=='barcode_mode' and value not in ('both','order','item'):raise HTTPException(400,'Invalid barcode mode')
         if key=='service_coverage_mode' and value not in ('radius','postal_codes'):raise HTTPException(400,'Invalid coverage mode')
@@ -72,11 +82,11 @@ def validate_service(value,key):
     if not isinstance(value,dict) or set(value)-allowed or (value.get('id',key)!=key):raise HTTPException(400,'Invalid service fields or ID')
     try:item=Service(**{**value,'id':key})
     except ValidationError:raise HTTPException(400,'Invalid service definition')
-    for v in (item.base_price,item.minimum_price,item.tax_rate,item.express_surcharge_percent,*[v.price for v in item.variants],*[m.amount for m in item.modifiers]):
+    for v in (item.base_price,item.minimum_price,item.express_surcharge_percent,*[v.price for v in item.variants],*[m.amount for m in item.modifiers]):
         if not math.isfinite(v) or v<0:raise HTTPException(400,'Prices and rates must be finite and non-negative')
     if not item.name.strip() or not item.category.strip() or len(item.name)>160 or item.turnaround_hours<0:raise HTTPException(400,'Invalid service name/category/turnaround')
     for field in allowed:
-        if field.endswith('_enabled') or field.endswith('_eligible') or field in ('active','taxable'):
+        if field.endswith('_enabled') or field.endswith('_eligible') or field == 'active':
             if field in value and type(value[field]) is not bool:raise HTTPException(400,'Service flags must be booleans')
     return {k:v for k,v in item.model_dump(mode='json').items() if k in allowed}
 

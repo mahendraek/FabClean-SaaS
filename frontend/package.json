@@ -14,9 +14,9 @@
     "test:handoffs:browser": "node tests/handoffs-browser.cjs",
     "test:platform:browser": "node tests/platform-browser.cjs",
     "test:configuration:browser": "node tests/configuration-browser.cjs",
-    "test:taxes:browser": "node tests/taxes-browser.cjs",
     "test:coverage:browser": "node tests/coverage-browser.cjs",
-    "test:admin-location:browser": "node tests/admin-location-browser.cjs"
+    "test:admin-location:browser": "node tests/admin-location-browser.cjs",
+    "test:notifications:browser": "node tests/notifications-browser.cjs"
   },
   "dependencies": {
     "@expo/metro-runtime": "57.0.15",
