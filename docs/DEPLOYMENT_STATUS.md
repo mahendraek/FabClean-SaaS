@@ -15,7 +15,9 @@ Authenticated Render API confirms both services **live** at the approved merge:
 
 API deployment logs confirm a successful build, application startup completion and Uvicorn listening. Web logs confirm `Exported: dist`, upload and “Your site is live”. The release includes consent-aware manual WhatsApp sharing, optional default-off email/SMS delivery and audit, removal of active tax calculation with historical invoices retained, and the handoff browser-check correction.
 
-Public smoke checks are **not verified**: requests to the API `/api/health` and web homepage returned environment proxy 403 because the public `onrender.com` hostnames are not allowed here. This is separate from the authenticated deployment API's verified live states. No production customer/sample writes or real messages were sent; authenticated production flows and physical-device sharing remain untested. Documentation-only follow-up leaves both running services at `d36b6d6`.
+After the user enabled access to the public app hostnames, all **11 read-only public smoke checks passed** on 15 October 2026. `/api/health` returned 200 with `status: ok` and `database: postgres`; OpenAPI returned 200, includes the WhatsApp receipt and communication-preference routes, and exposes no `/api/taxes` routes. Unauthenticated `/api/orders` and `/api/notifications/outbox` returned 401 with approved-origin CORS and `Cache-Control: no-store`. The homepage, order-detail, customer-profile, notifications and configuration pages all returned 200 HTML. Trusted preflight returned 200; an untrusted origin returned 400 without an allow-origin header.
+
+No production customer/sample writes or real messages were sent. Authenticated production flows and physical-device sharing remain untested. Environment configuration was not edited by the agent. Documentation-only follow-up leaves both running services at `d36b6d6`.
 
 ## Previous PR #11 access blocker — resolved
 

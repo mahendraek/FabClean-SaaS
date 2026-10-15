@@ -60,7 +60,7 @@ export async function refreshSession() {
   }
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}, asText = false): Promise<T> {
   await sessionReady;
   const started = generation;
   const operational = path !== "/context" && !path.startsWith("/auth/") && !path.startsWith("/platform/") && !path.startsWith("/brand/stores");
@@ -74,7 +74,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   let data: any = null;
   try { data = text ? JSON.parse(text) : null; }
   catch {
-    if (res.ok) throw new Error("The server returned an invalid response. Retry shortly.");
+    if (res.ok && !asText) throw new Error("The server returned an invalid response. Retry shortly.");
   }
   if (!res.ok) {
     const error: any = new Error(typeof data?.detail === "string" ? data.detail : `Request failed (HTTP ${res.status}). Retry shortly.`);
@@ -90,10 +90,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     invalidateRequests();
     emit();
   }
-  return data as T;
+  return (asText ? text : data) as T;
 }
 export const api = {
   get: <T>(path: string) => request<T>(path),
+  getText: (path: string) => request<string>(path, {}, true),
   post: <T>(path: string, body?: unknown) => request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
   put: <T>(path: string, body?: unknown) => request<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" })
