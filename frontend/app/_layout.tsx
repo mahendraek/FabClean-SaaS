@@ -40,6 +40,7 @@ export default function RootLayout() {
         <Stack.Screen name="garment-tags" />
         <Stack.Screen name="garment-assembly" />
         <Stack.Screen name="hardware" />
+        <Stack.Screen name="print-preview" />
       </Stack>}</ActiveContext></InvitationTokenProvider>
     </SafeAreaView></SafeAreaProvider>
   );

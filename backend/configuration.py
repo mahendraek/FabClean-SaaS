@@ -69,7 +69,8 @@ def validate_settings(values):
         if key in ('service_radius_miles','pickup_delivery_slot_minutes'):
             if type(value) not in (int,float) or not math.isfinite(value) or value<0 or value>10000 or (key=='pickup_delivery_slot_minutes' and (value<15 or value>1440 or value%1)):raise HTTPException(400,'Invalid fulfillment rule')
         elif key=='hardware_profile':
-            if not isinstance(value,dict) or len(json.dumps(value))>10000:raise HTTPException(400,'Invalid hardware profile')
+            import printing
+            printing.validate_profile(value)
         elif not (key.endswith('_enabled')):
             if not isinstance(value,str) or len(value)>2000:raise HTTPException(400,'Invalid setting text')
         if key=='barcode_mode' and value not in ('both','order','item'):raise HTTPException(400,'Invalid barcode mode')
