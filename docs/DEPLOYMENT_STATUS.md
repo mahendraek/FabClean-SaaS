@@ -2,13 +2,28 @@
 
 Updated: 15 October 2026.
 
-## PR #11 — merged; deployment pending
+## Current live release — PR #11 receipts/preferences and tax removal
+
+The user explicitly authorized merge and deployment. PR #11 merged at `d36b6d6c7efdd84c284f4647460b488991735344`; its tree equals accepted head `93e75f8`, whose three hosted checks all passed. After the user restored Render network access, both deployment requests explicitly targeted this exact merge. Existing service roots, build/start commands, credentials and automatic deployment off were preserved. No environment configuration was changed during deployment.
+
+Authenticated Render API confirms both services **live** at the approved merge:
+
+| Service | Public URL | Live deployment | Finished (India time) |
+| --- | --- | --- | --- |
+| API | https://fabclean-saas-api.onrender.com | `dep-db8aivom7kps73dmrpr0` | 2026-10-15 15:54:08 IST |
+| Web | https://fabclean-saas-web.onrender.com | `dep-db8aivtg1s2s739l43sg` | 2026-10-15 15:55:19 IST |
+
+API deployment logs confirm a successful build, application startup completion and Uvicorn listening. Web logs confirm `Exported: dist`, upload and “Your site is live”. The release includes consent-aware manual WhatsApp sharing, optional default-off email/SMS delivery and audit, removal of active tax calculation with historical invoices retained, and the handoff browser-check correction.
+
+Public smoke checks are **not verified**: requests to the API `/api/health` and web homepage returned environment proxy 403 because the public `onrender.com` hostnames are not allowed here. This is separate from the authenticated deployment API's verified live states. No production customer/sample writes or real messages were sent; authenticated production flows and physical-device sharing remain untested. Documentation-only follow-up leaves both running services at `d36b6d6`.
+
+## Previous PR #11 access blocker — resolved
 
 PR #11 was accepted and merged with explicit user authorization at `d36b6d6c7efdd84c284f4647460b488991735344` on 15 October 2026 at 15:38:27 IST. The merged tree equals accepted head `93e75f8`; all its hosted validation checks passed. This release contains manual WhatsApp receipts, communication preferences, optional email/SMS delivery, active tax removal with historical invoices preserved, and the handoff browser-check correction.
 
 No Render deployment request was sent: the current enforced environment network policy excludes `api.render.com`, and both service-read requests returned proxy 403 despite a ready existing Render credential. Environment settings were left unchanged. Restore API access, then deploy this exact approved merge to the two SaaS services and verify live commit IDs and smoke results. The last verified live deployments remain the maintenance release recorded below; current live status was not reverified during the blocked request.
 
-## Current live release — admin location, taxes and branding maintenance
+## Previous release — admin location, taxes and branding maintenance (historical evidence)
 
 The user explicitly approved merge and deployment. Maintenance branch `codex/admin-location-tax-branding` was merged into main at `930a43efd068261c0e6358a2dfecc323641c19ad` and independently verified through authenticated Git. The merged tree exactly matches validated head `4380b4f`: 142 backend tests without skips, 33 frontend tests, TypeScript, 31-route export, seven desktop/mobile suites and zero-error local load validation. See [implementation and outstanding data work](ADMIN_LOCATION_BRANDING.md).
 

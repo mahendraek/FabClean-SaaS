@@ -1,6 +1,6 @@
 # Manual WhatsApp receipts and communication preferences
 
-Status: MERGED with explicit user approval at `d36b6d6` on 15 October 2026. Receipt workflows retained; active tax implementation removed. Render deployment pending network access.
+Status: MERGED with explicit user approval at `d36b6d6` on 15 October 2026. Receipt workflows retained; active tax implementation removed. Both SaaS Render services are verified live on that merge; direct public smoke checks remain blocked by environment networking.
 Priority: P2 — current PR #11.
 Implementation branch: `codex/pr-11-receipts-location-taxes` (existing branch name retained).
 
