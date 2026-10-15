@@ -1,6 +1,12 @@
 # Render deployment status
 
-Updated: 14 October 2026.
+Updated: 15 October 2026.
+
+## PR #11 — merged; deployment pending
+
+PR #11 was accepted and merged with explicit user authorization at `d36b6d6c7efdd84c284f4647460b488991735344` on 15 October 2026 at 15:38:27 IST. The merged tree equals accepted head `93e75f8`; all its hosted validation checks passed. This release contains manual WhatsApp receipts, communication preferences, optional email/SMS delivery, active tax removal with historical invoices preserved, and the handoff browser-check correction.
+
+No Render deployment request was sent: the current enforced environment network policy excludes `api.render.com`, and both service-read requests returned proxy 403 despite a ready existing Render credential. Environment settings were left unchanged. Restore API access, then deploy this exact approved merge to the two SaaS services and verify live commit IDs and smoke results. The last verified live deployments remain the maintenance release recorded below; current live status was not reverified during the blocked request.
 
 ## Current live release — admin location, taxes and branding maintenance
 

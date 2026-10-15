@@ -1,6 +1,6 @@
 # Manual WhatsApp receipts and communication preferences
 
-Status: TAX IMPLEMENTATION REMOVED at the user's request on 15 October 2026; receipt workflows retained. Not merged or deployed.
+Status: MERGED with explicit user approval at `d36b6d6` on 15 October 2026. Receipt workflows retained; active tax implementation removed. Render deployment pending network access.
 Priority: P2 — current PR #11.
 Implementation branch: `codex/pr-11-receipts-location-taxes` (existing branch name retained).
 

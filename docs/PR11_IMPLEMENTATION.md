@@ -35,3 +35,9 @@ Earlier receipt implementations were published at `5388cc3`/`bc2a050`, and manua
 ## Fresh revalidation — 15 October 2026
 
 The published application revision `cae2bc43cc6ae93686ded33ecd266a8084662969` passed the full gate again in a new disposable local PostgreSQL database: 148 backend tests with no skips, 36 frontend tests, TypeScript, 31-route Expo web export, seven desktop/mobile browser suites and 160 load requests with zero errors (60.92 requests/second, worst p95 240 ms). This validates the current published scope, including manual WhatsApp sharing and removal of active tax calculation. No additional application changes were needed. Provider requests remained mocked, WhatsApp navigation was intercepted, and actual external delivery/native-device behavior is unverified. GitHub API access was Forbidden; Git publication does not establish review, hosted CI, merge or deployment state.
+
+## Merge acceptance — 15 October 2026
+
+The user explicitly authorized merge and deployment. GitHub confirms PR #11 merged at `d36b6d6c7efdd84c284f4647460b488991735344` (15:38:27 IST); the merged tree matches accepted head `93e75f80ed5d6fc00b4f3f166286b433ca2656d3`, whose hosted validation checks all succeeded. Earlier “not merged” notes above describe the development stage and are superseded by this acceptance.
+
+Deployment remains pending. The existing Render credential is ready, but the published network policy excludes `api.render.com` and read-only requests to both SaaS services return proxy 403. No deployment request or environment-setting change was made. After access is restored, deploy the approved merge explicitly to `fabclean-saas-api` and `fabclean-saas-web`, preserve existing service configuration/credentials, and verify both deployment commit IDs and smoke checks before calling it live.
