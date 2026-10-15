@@ -72,4 +72,6 @@ jobs:
           path: |
             /tmp/pr6-validation-load.json
             /tmp/handoffs-*.png
+            /tmp/printing-*.png
+            /tmp/printing-*.pdf
           if-no-files-found: ignore

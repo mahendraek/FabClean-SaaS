@@ -6,7 +6,6 @@ import { ArrowLeft, Barcode, CheckCircle, Minus, Plus, Printer, Sparkle, Trash }
 import { api } from "@/src/api";
 import { Code128 } from "@/src/Code128";
 import { colors } from "@/src/theme";
-import { printOrderReceipt } from "@/src/receipt";
 import { WhatsAppReceipt } from "@/src/WhatsAppReceipt";
 
 type Service={id:string;name:string;category:string;base_price:number;unit_label:string};
@@ -126,15 +125,7 @@ export default function OrderDetail(){
       const p=await api.get<any>("/orders/"+order.id+"/payments");setPayments(p.payments||[]);
     }catch(e:any){setErr(e.message||"Could not record refund");}finally{setPaymentBusy(false);}
   }
-  async function printReceipt(){
-    if(!order)return;
-    setErr("");
-    try{await printOrderReceipt(order.id);}
-    catch(e:any){setErr(e.message||"Could not generate receipt");}
-  }
-  function printLabels(){
-    if(typeof window!=="undefined") window.print();
-  }
+  function printReceipt(){if(order)router.push({pathname:'/print-preview',params:{id:order.id,kind:'receipt'}});}
 
   if(!order)return <View style={s.loading}><Text>{err||"Loading order…"}</Text></View>;
 
@@ -221,7 +212,7 @@ export default function OrderDetail(){
           <Text style={s.label}>Reference</Text><TextInput style={s.input} value={paymentRef} onChangeText={setPaymentRef} placeholder="Optional reference"/>
           <Text style={s.label}>Notes</Text><TextInput style={s.input} value={paymentNotes} onChangeText={setPaymentNotes} placeholder="Optional payment note"/>
           <View style={s.payActions}><Pressable disabled={paymentBusy} onPress={recordPayment} style={s.payBtn}><Text style={s.payBtnText}>{paymentBusy?"Saving…":"Record Payment"}</Text></Pressable><Pressable disabled={paymentBusy} onPress={recordRefund} style={s.refundBtn}><Text style={s.refundBtnText}>Refund</Text></Pressable></View>
-          <Pressable onPress={printReceipt} style={s.receiptBtn}><Printer size={16} color={colors.primary}/><Text style={s.receiptText}>Print Receipt</Text></Pressable>
+          <Pressable accessibilityRole="button" onPress={printReceipt} style={s.receiptBtn}><Printer size={16} color={colors.primary}/><Text style={s.receiptText}>Print Receipt</Text></Pressable>
           <WhatsAppReceipt key={order.id} orderId={order.id} customerId={order.customer.id}/>
           {optionalDeliveryEnabled&&<Pressable accessibilityRole="button" onPress={()=>void api.post('/orders/'+order.id+'/send-receipt').then(()=>router.push('/notifications')).catch(e=>setErr(e.message))} style={s.receiptBtn}><Text style={s.receiptText}>Queue email/SMS receipt</Text></Pressable>}
           {payments.length?<View style={{marginTop:12}}>{payments.map((p:any)=><View key={p.id} style={s.paymentRow}><View style={{flex:1}}><Text style={s.rowStrong}>{pretty(p.transaction_type)} · {pretty(p.payment_method)}</Text><Text style={s.meta}>{p.receipt_number} · {p.staff_name||"Staff"}{p.transaction_type==="refund"&&Number(p.tax_amount||0)>0?" · Recorded tax credit $"+Number(p.tax_amount).toFixed(2):""}{p.reference_number?" · "+p.reference_number:""}</Text></View><Text style={s.amount}>{Number(p.amount||0)<0?"-$"+Math.abs(Number(p.amount||0)).toFixed(2):"$"+Number(p.amount||0).toFixed(2)}</Text></View>)}</View>:<Text style={s.meta}>No payment transactions yet.</Text>}

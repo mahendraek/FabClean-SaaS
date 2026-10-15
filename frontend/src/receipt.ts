@@ -1,5 +1,4 @@
-import { api } from "@/src/api";
-import { code128Svg } from "@/src/hardware";
+import { code128Svg, validateProfile } from "@/src/hardware";
 
 function esc(v:any){
   return String(v??"")
@@ -9,20 +8,14 @@ function esc(v:any){
     .replace(/"/g,"&quot;");
 }
 
-function money(v:any){return "$"+Number(v||0).toFixed(2);}
-
-export async function printOrderReceipt(orderId:string){
-  if(typeof window==="undefined")return;
-  const [receipt,settings,garmentResult]=await Promise.all([
-    api.get<any>("/orders/"+encodeURIComponent(orderId)+"/receipt"),
-    api.get<any>("/settings"),
-    api.get<any>("/orders/"+encodeURIComponent(orderId)+"/garments")
-  ]);
-
+export function receiptHtml(data:any){
+  const receipt=data.receipt,settings=data.business,garments=data.garments||[],profile=validateProfile(data.profile);
+  const code=receipt.order?.currency||receipt.order?.tax_snapshot?.currency;
+  const currency=typeof code==='string'&&/^[A-Z]{3}$/.test(code)?code:'UNSPECIFIED';
+  const money=(v:any)=>{const amount=Number(v);if(!Number.isFinite(amount))throw new Error('Receipt contains invalid financial data.');return esc(currency)+' '+amount.toFixed(2);};
   const order=receipt.order||{};
   const customer=order.customer||{};
   const items=order.items||[];
-  const garments=garmentResult.garments||[];
   const businessName=settings.business_name||receipt.business_name||"FabClean";
   const businessAddress=settings.business_address||"";
   const businessPhone=settings.business_phone||"";
@@ -45,19 +38,17 @@ export async function printOrderReceipt(orderId:string){
     <div class="mini-barcode">${code128Svg(g.garment_code,38,1.2)}</div>
   </div>`).join("");
 
-  const w=window.open("","_blank","width=760,height=900");
-  if(!w)throw new Error("Pop-up blocked. Allow pop-ups to print the receipt.");
-
-  w.document.write(`<!doctype html>
+  const paper=profile.receipt_paper,thermal=paper!=='a4',width=paper==='58mm'?58:80;
+  return `<!doctype html>
 <html>
 <head>
   <title>${esc(receiptNo)}</title>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <style>
-    @page{margin:10mm}
+    @page{${thermal?'size:auto;margin:2mm':'size:A4;margin:10mm'}}
     *{box-sizing:border-box}
     body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:0;background:#fff}
-    .receipt{max-width:760px;margin:0 auto;padding:18px}
+    .receipt{max-width:${thermal?(width-4)+'mm':'760px'};margin:0 auto;padding:${thermal?'0':'18px'}}
     .business{text-align:center}
     .business h1{font-size:24px;margin:0 0 5px}
     .business div{font-size:13px;line-height:1.45}
@@ -85,6 +76,7 @@ export async function printOrderReceipt(orderId:string){
     .print-actions{text-align:center;margin:16px 0}
     button{padding:10px 16px;font-weight:700}
     @media(max-width:560px){.grid{grid-template-columns:1fr}.garments{grid-template-columns:1fr}.receipt{padding:10px}}
+    ${thermal?'.business h1{font-size:17px}.business div,.section div,table,.sumrow{font-size:10px}.grid,.garments{grid-template-columns:1fr}th,td{padding:4px 1px}.num{white-space:normal}.order-barcode svg{height:40px}.receipt{overflow-wrap:anywhere}.summary{width:100%}':''}
     @media print{.print-actions{display:none}.receipt{padding:0}}
   </style>
 </head>
@@ -143,12 +135,12 @@ export async function printOrderReceipt(orderId:string){
 
     ${garments.length?`<div class="rule"></div><div class="section"><h3>Individual garment barcodes (${garments.length})</h3><div class="garments">${garmentRows}</div></div>`:""}
 
+    ${order.pricing_status==="estimated"?`<p><strong>Estimated pricing — final total may change.</strong></p>`:""}
     ${order.notes?`<div class="rule"></div><div class="section"><h3>Order notes</h3><div>${esc(order.notes)}</div></div>`:""}
 
     <div class="footer">Thank you for choosing ${esc(businessName)}.</div>
     <div class="print-actions"><button onclick="window.print()">Print Receipt</button></div>
   </div>
 </body>
-</html>`);
-  w.document.close();
+</html>`;
 }
