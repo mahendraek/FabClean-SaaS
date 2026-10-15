@@ -27,6 +27,10 @@ No new tables, migrations, RLS policies or environment settings. Reads retain fo
 
 Reporting requires PostgreSQL; memory-only development returns 503. Inactive stores of an authorized brand remain available for historical reporting. Opening an order from another reported store requires selecting that store in the operational header. Existing tax removal and archived financial compatibility are preserved; reporting does not calculate taxes.
 
+## Publication
+
+The existing draft [PR #12](https://github.com/mahendraek/FabClean-SaaS/pull/12) contains implementation head `b34a10550e6dc09df61025952ffd25778a575dfc`, whose tree exactly matches local implementation `3013f25`. Publication used the authenticated GitHub Git API because native Git transport is blocked. The commit preserves accepted main `6de9507` and planning head `2246383` as parents; no planning history was discarded. Hosted CI is running; its result is not yet claimed. This documentation-only follow-up preserves the locally validated application/test tree.
+
 ## Validation
 
 The complete `scripts/validate.sh` gate passed on 15 October 2026: **157 backend tests without skips, 39 frontend unit tests, clean TypeScript, a 31-route Expo web export and all eight desktop/mobile browser suites** (context, handoffs, platform, configuration, coverage, admin locations, notifications and reports). The local load gate completed 160 requests with zero errors at 171.29 requests/second; worst p95 was 73.36 ms. A subsequent frontend unit run also passed all 39 tests after strengthening CSV active-context assertions. Coverage includes real PostgreSQL reconciliation and negative authorization, timezone/DST boundaries, CSV safety, current role revocation, report size limits, authenticated CSV responses on web/iOS/Android, and desktop/mobile web browser filters, actual pagination, downloads and failure recovery.
