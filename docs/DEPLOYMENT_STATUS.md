@@ -1,8 +1,25 @@
 # Render deployment status
 
-Updated: 15 October 2026.
+Updated: 16 October 2026.
 
-## Current live release — PR #11 receipts/preferences and tax removal
+## Current live release — PR #13 receipt and garment-tag printing
+
+The user explicitly authorized merge and deployment on 16 October 2026. GitHub confirms PR #13 merged at `a1c012e947daeab9158cb6936217aa7ae7334678`; the merged tree exactly matches accepted head `e67186c`. Both exact-head hosted validation runs passed (`38727121787`, `38727116721`). Full local validation passed 155 backend tests without skips, 41 frontend tests, TypeScript, 32-route export, all eight desktop/mobile browser suites and the zero-error load gate.
+
+Authenticated Render API confirms both services **live** at `a1c012e947daeab9158cb6936217aa7ae7334678`:
+
+| Service | Live deployment | Finished (India time) |
+| --- | --- | --- |
+| API | `dep-db8mfse89jmc73enkpm0` | 2026-10-16 05:26:26 IST |
+| WEB | `dep-db8mfsavcj2c73clq9f0` | 2026-10-16 05:27:55 IST |
+
+All 13 read-only public smoke checks passed: PostgreSQL API health; new preview/confirmation OpenAPI routes; authenticated boundaries, no-store, request IDs and CORS on protected orders/preview; trusted and untrusted preflight behavior; six web pages including `/print-preview`; and a fresh JavaScript bundle containing receipt profiles and print-confirmation code. No production records, sign-in attempts, real messages or physical print operations were created during smoke checks. Actual printer/media and native-device acceptance remain manual.
+
+API: https://fabclean-saas-api.onrender.com · Web: https://fabclean-saas-web.onrender.com
+
+Existing service roots/build commands, credentials and automatic deployment off were preserved. No environment settings changed. PR #12 remains an independent open draft and is not included in this release. This documentation-only follow-up leaves the running services at `a1c012e947daeab9158cb6936217aa7ae7334678`.
+
+## Previous release — PR #11 receipts/preferences and tax removal
 
 The user explicitly authorized merge and deployment. PR #11 merged at `d36b6d6c7efdd84c284f4647460b488991735344`; its tree equals accepted head `93e75f8`, whose three hosted checks all passed. After the user restored Render network access, both deployment requests explicitly targeted this exact merge. Existing service roots, build/start commands, credentials and automatic deployment off were preserved. No environment configuration was changed during deployment.
 

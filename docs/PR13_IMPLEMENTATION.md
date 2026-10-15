@@ -1,6 +1,6 @@
 # PR #13 — receipt and garment-tag printing
 
-Development authorized on 15 October 2026. Branch `codex/pr-13-receipt-tag-printing` starts from accepted main `6de9507`, independently of the unmerged reporting PR #12. No merge or deployment is authorized.
+Development authorized on 15 October 2026. Branch `codex/pr-13-receipt-tag-printing` starts from accepted main `6de9507`, independently of the unmerged reporting PR #12. Merge and deployment were explicitly authorized on 16 October 2026.
 
 ## Behavior
 
@@ -23,3 +23,7 @@ No new schema, persistence tables, RLS policies, dependencies or environment set
 ## Validation
 
 The complete `scripts/validate.sh` gate passed on 15 October 2026: **155 backend tests without skips, 41 frontend unit tests, clean TypeScript, 32-route Expo web export and all eight desktop/mobile browser suites**. The 160-request load gate had zero errors at 163.65 requests/second; worst p95 was 70.35 ms. Hosted CI remains a separate check. Targeted checks pass for printer profile bounds and legacy defaults, store/brand isolation, immutable receipt amounts, concurrent confirmation retries, count rollback on audit failure, HTML escaping, raw command safety, media dimensions, original barcode identity, missing currency and popup/native errors. The full repository gate includes backend PostgreSQL, local load, frontend unit/TypeScript/web export, retained browser suites and new desktop/mobile printing checks with generated PDF page counts. No physical printer, production operations or real external messages are used in automated tests. Actual printer/media and native-device acceptance remain manual.
+
+## Released 16 October 2026
+
+PR #13 merged at `a1c012e947daeab9158cb6936217aa7ae7334678`; both Render services are live at that exact commit. Both accepted-head hosted validation checks and all 13 read-only public smoke checks passed. See [deployment evidence](DEPLOYMENT_STATUS.md). Physical hardware and native-device acceptance remain manual. PR #12 was not merged or deployed.

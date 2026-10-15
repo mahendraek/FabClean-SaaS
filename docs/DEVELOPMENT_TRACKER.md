@@ -1,9 +1,11 @@
 # FabClean development tracker
 
-Updated: 15 October 2026. This is the canonical work queue for `mahendraek/FabClean-SaaS`.
+Updated: 16 October 2026. This is the canonical work queue for `mahendraek/FabClean-SaaS`.
 Develop one item at a time. Keep future scopes in the backlog; do not implement or merge another roadmap PR as part of the current item.
 
 ## Current work
+
+**PR #13 merged and deployed (16 October 2026):** user-approved merge `a1c012e947daeab9158cb6936217aa7ae7334678` is live on both Render services. Both exact-head hosted checks and all 13 public read-only smoke checks passed. Printer profiles, receipt/tag previews, raw files and staff-confirmed printing are released. Physical hardware/native acceptance remains manual. PR #12 is unchanged and remains an open draft. See [release evidence](DEPLOYMENT_STATUS.md).
 
 **PR #13 — receipt and garment-tag printing (15 October 2026):** development explicitly authorized while PR #12 remains an independent draft awaiting review. Working on `codex/pr-13-receipt-tag-printing` from accepted main `6de9507`; PR #12 reporting code is not included. Scope: validated store printer profiles, receipt sizes/currency, safe label files, previews/calibration and explicit idempotent physical-print confirmations. No printer selected yet; user requested accessible, budget-friendly defaults. No merge, deployment or environment settings changes. See [scope](roadmap/receipt-tag-printing.md). Full local gate passed: 155 backend tests without skips, 41 frontend tests, clean TypeScript, 32-route web export and all eight desktop/mobile browser suites. Load: 160 requests, zero errors, 163.65 requests/second, worst p95 70.35 ms. Ready for draft review; hosted CI and physical-printer acceptance are separate. See [implementation evidence](PR13_IMPLEMENTATION.md).
 
@@ -76,7 +78,7 @@ The implementation adds forced PostgreSQL row-level security on 21 operational t
 | 9 | [#11](https://github.com/mahendraek/FabClean-SaaS/pull/11) | P2 | [Manual WhatsApp receipts and communication preferences](roadmap/notifications-receipts.md) | Tax implementation removed; full local validation passed; not merged/deployed | #4, #8 |
 | 10 | [#12](https://github.com/mahendraek/FabClean-SaaS/pull/12) | P2 | [Consolidated reporting/exports](roadmap/cross-store-reporting.md) | Implemented; local and hosted CI passed; open draft | #4, #5, #11 |
 
-| 11 | [#13](https://github.com/mahendraek/FabClean-SaaS/pull/13) | P2 | [Receipt and garment-tag printing](roadmap/receipt-tag-printing.md) | Locally validated; awaiting review | Accepted main through #11; independent of #12 |
+| 11 | [#13](https://github.com/mahendraek/FabClean-SaaS/pull/13) | P2 | [Receipt and garment-tag printing](roadmap/receipt-tag-printing.md) | Merged at `a1c012e`; both Render services live; smoke checks passed | Accepted main through #11; independent of #12 |
 
 The sequence follows the scope documents' P0/P1/P2 priorities and prerequisite work. It is a development sequence, not permission to merge or deploy. PR #3 is listed second because the user selected #4 first.
 
