@@ -69,5 +69,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: validation-evidence
-          path: /tmp/pr6-validation-load.json
+          path: |
+            /tmp/pr6-validation-load.json
+            /tmp/handoffs-*.png
           if-no-files-found: ignore
