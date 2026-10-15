@@ -3,8 +3,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ArrowLeft, CheckCircle, Minus, Plus, Sparkle, Trash } from "phosphor-react-native";
-import { TaxBreakdown } from "@/src/TaxBreakdown";
-import { useTaxEstimate } from "@/src/useTaxEstimate";
 import { api } from "@/src/api";
 import { colors } from "@/src/theme";
 import { imageForCategory } from "@/src/service-media";
@@ -103,8 +101,7 @@ export default function WalkIn(){
     if(!allowed){setFulfillmentType("walk_in");setPickupDate("");setPickupSlotId("");setDeliveryDate("");setDeliverySlotId("");}
   },[capabilities.pickup_enabled,capabilities.delivery_enabled]);
   const deliveryFee=0;
-  const taxEstimate=useTaxEstimate(lines.length?{items:lines,discount:promoDiscount,delivery_fee:0,promo_code:promoCode.trim(),customer_id:selectedCustomer?.id||null}:null);
-  const orderTotal=taxEstimate.result?.total??Math.max(0,total-promoDiscount);
+  const orderTotal=Math.max(0,total-promoDiscount);
   useEffect(()=>{setPromoDiscount(0);setPromoMessage("");},[total,selectedCustomer?.id]);
   useEffect(()=>{
     if(!created?.id){setSuccessSettings({});setSuccessGarments([]);return;}
@@ -169,11 +166,10 @@ export default function WalkIn(){
   async function save(){
     setSaving(true);setErr("");
     try{
-      if(taxEstimate.busy||taxEstimate.error)throw new Error(taxEstimate.error||"Wait for the tax estimate");
       if(fulfillmentType!=='walk_in'&&(!addressPin||addressPin.result.eligible===false))throw new Error('Confirm the service address pin and check coverage first');
       const o=await api.post<any>("/orders",{
         customer_id:selectedCustomer?.id||null,customer_name:name.trim(),customer_phone:phone.trim(),customer_email:email.trim(),
-        fulfillment_type:fulfillmentType,items:lines,notes,discount:promoDiscount,tax:0,payment_method:"cash",payment_status:paymentStatus,
+        fulfillment_type:fulfillmentType,items:lines,notes,discount:promoDiscount,payment_method:"cash",payment_status:paymentStatus,
         quick_dropoff:false,bag_count:0,due_at:dueAt.trim()||null,pricing_status:"estimated",
         service_area_id:null,service_area_name:"",
         scheduled_slot_id:fulfillmentType==="walk_in"?null:(needsPickup?pickupSlotId:deliverySlotId)||null,
@@ -280,7 +276,6 @@ export default function WalkIn(){
         <View style={s.receiptTotals}>
           <View style={s.receiptTotalRow}><Text style={s.receiptText}>Subtotal</Text><Text style={s.receiptStrong}>{"$"+Number(created.subtotal||0).toFixed(2)}</Text></View>
           {Number(created.discount||0)>0?<View style={s.receiptTotalRow}><Text style={s.receiptText}>Discount</Text><Text style={s.receiptStrong}>{"-$"+Number(created.discount||0).toFixed(2)}</Text></View>:null}
-          <TaxBreakdown snapshot={created.tax_snapshot} tax={created.tax}/>{Number(created.tax||0)>0?<View style={s.receiptTotalRow}><Text style={s.receiptText}>Tax</Text><Text style={s.receiptStrong}>{"$"+Number(created.tax||0).toFixed(2)}</Text></View>:null}
           {Number(created.delivery_fee||0)>0?<View style={s.receiptTotalRow}><Text style={s.receiptText}>Pickup & delivery</Text><Text style={s.receiptStrong}>{"$"+Number(created.delivery_fee||0).toFixed(2)}</Text></View>:null}
           <View style={[s.receiptTotalRow,s.receiptGrandTotal]}><Text style={s.receiptGrandText}>Total</Text><Text style={s.receiptGrandText}>{"$"+Number(created.total||0).toFixed(2)}</Text></View>
         </View>
@@ -311,7 +306,7 @@ export default function WalkIn(){
 
   return <ScrollView style={{backgroundColor:colors.soft}} contentContainerStyle={s.page}>
     <View style={s.top}><Pressable onPress={()=>router.push("/")} style={s.back}><ArrowLeft size={18} color={colors.ink}/><Text style={s.backText}>Home</Text></Pressable><View style={s.brand}><Sparkle size={16} color={colors.primary}/><Text style={s.brandText}>FabClean</Text></View></View>
-    <View style={s.header}><Text style={s.kicker}>COUNTER</Text><Text style={s.title}>Create Order</Text><View style={{marginVertical:8}}>{taxEstimate.busy&&<Text>Calculating taxes…</Text>}{taxEstimate.error&&<Text accessibilityRole="alert" style={{color:colors.danger}}>{taxEstimate.error}</Text>}{taxEstimate.result&&<TaxBreakdown snapshot={taxEstimate.result.tax_snapshot} tax={taxEstimate.result.tax}/>}</View><Text style={s.sub}>Find or scan a customer, add garments/services and quantities, then create the order. Order and garment tracking barcodes are generated automatically.</Text></View>
+    <View style={s.header}><Text style={s.kicker}>COUNTER</Text><Text style={s.title}>Create Order</Text><Text style={s.sub}>Find or scan a customer, add garments/services and quantities, then create the order. Order and garment tracking barcodes are generated automatically.</Text></View>
 
     <View style={s.panel}>
       <Text style={s.panelTitle}>Fulfillment</Text>

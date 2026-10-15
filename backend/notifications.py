@@ -183,7 +183,7 @@ def receipt(s, order, payment=None):
     rows, paid, balance = s.payment_totals(order["id"], order["total"])
     return {"order_number": order["order_number"], "items": deepcopy(order.get("items", [])),
             **{key: deepcopy(order.get(key, 0)) for key in ("subtotal", "discount", "delivery_fee", "tax", "total")},
-            "tax_snapshot": deepcopy(order.get("tax_snapshot")), "paid_total": paid, "balance_due": balance,
+            "currency": order.get("currency"), "tax_snapshot": deepcopy(order.get("tax_snapshot")), "paid_total": paid, "balance_due": balance,
             "payment": json.loads(json.dumps(payment, default=str)) if payment else None,
             "receipt_number": (payment or (rows[-1] if rows else {})).get("receipt_number")}
 
@@ -196,12 +196,15 @@ def render(s, order, kind, payment=None):
     snapshot = receipt(s, order, payment) if kind.endswith("receipt") else None
     if snapshot:
         lines = (snapshot.get('tax_snapshot') or {}).get('lines') or []
-        text += "\n" + "\n".join(f"{item.get('service_name', 'Service')} x {item.get('quantity', 1)}: {float(lines[i]['base']) if i<len(lines) else float(s.taxes.money(s.taxes.number(item.get('quantity',1))*s.taxes.number(item.get('unit_price',0)))):.2f}" for i,item in enumerate(snapshot["items"]))
-        currency = (snapshot.get('tax_snapshot') or {}).get('currency') or 'Recorded amount'
-        text += "\n" + "\n".join(f"{key.replace('_',' ').title()}: {currency} {snapshot[key]:.2f}" for key in ("subtotal", "discount", "delivery_fee", "tax", "total", "paid_total", "balance_due"))
+        text += "\n" + "\n".join(f"{item.get('service_name', 'Service')} x {item.get('quantity', 1)}: {float(lines[i]['base']) if i<len(lines) else float(s.pricing.money(s.pricing.number(item.get('quantity',1))*s.pricing.number(item.get('unit_price',0)))):.2f}" for i,item in enumerate(snapshot["items"]))
+        currency = snapshot.get('currency') or (snapshot.get('tax_snapshot') or {}).get('currency') or 'Recorded amount'
+        text += "\n" + "\n".join(f"{key.replace('_',' ').title()}: {currency} {snapshot[key]:.2f}" for key in ("subtotal", "discount", "delivery_fee", "total", "paid_total", "balance_due"))
         tax = snapshot.get("tax_snapshot") or {}
         loc = tax.get("location") or {}
-        text += "\nService location: " + ", ".join(str(loc.get(k) or "") for k in ("city", "state", "postal_code", "country") if loc.get(k))
+        if snapshot.get("tax"):
+            text += f"\nRecorded tax: {currency} {snapshot['tax']:.2f}"
+        if loc:
+            text += "\nService location: " + ", ".join(str(loc.get(k) or "") for k in ("city", "state", "postal_code", "country") if loc.get(k))
         for entry in tax.get("breakdown", []):
             text += f"\n{entry['jurisdiction']} ({entry['rate']}%): {currency} {entry['amount']:.2f}"
         if payment:

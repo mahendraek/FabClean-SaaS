@@ -22,7 +22,7 @@ def register(app,s):
             for key,name,price in [('sample-wash-fold','TEST — Wash & Fold',2.50),('sample-shirt','TEST — Shirt Cleaning',4.50),('sample-dry-clean','TEST — Dry Cleaning',12.00)]:
                 row=conn.execute('SELECT id FROM services WHERE id=%s',(key,)).fetchone()
                 if row:continue
-                item=Service(id=key,name=name,category='TEST services',pricing_type='per_item',base_price=price,taxable=False,business_id=brand,location_id=store,description='Demo service; review pricing and taxability before real use')
+                item=Service(id=key,name=name,category='TEST services',pricing_type='per_item',base_price=price,business_id=brand,location_id=store,description='Demo service; review pricing before real use')
                 conn.execute('INSERT INTO services(id,payload,active) VALUES (%s,%s::jsonb,TRUE)',(key,item.model_dump_json()));created.append(key)
             s.platform_audit_write(conn,actor,'cleananddry_samples_created',brand,{'store_id':store,'created_services':created})
         return {'customer':customer,'created_services':created,'message':'CleanandDry test records are available. No tax rates were guessed; review each service taxability.'}

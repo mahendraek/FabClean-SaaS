@@ -1,37 +1,29 @@
-# Location-based tax completion, manual WhatsApp receipts and preferences
+# Manual WhatsApp receipts and communication preferences
 
-Status: CORE IMPLEMENTATION LOCALLY VALIDATED — free-provider acceptance remains blocked; not merged or deployed.
-Priority: P2 — development authorized by the user on 14 October 2026.
-Implementation branch: `codex/pr-11-receipts-location-taxes`.
+Status: TAX IMPLEMENTATION REMOVED at the user's request on 15 October 2026; receipt workflows retained. Not merged or deployed.
+Priority: P2 — current PR #11.
+Implementation branch: `codex/pr-11-receipts-location-taxes` (existing branch name retained).
 
-See [implementation, runtime configuration and remaining blockers](../PR11_IMPLEMENTATION.md). The final local gate including manual WhatsApp passed 166 backend tests without skips, 36 frontend tests, TypeScript, 32-route web export, eight desktop/mobile browser suites and zero-error load validation. Provider lookup/send responses and WhatsApp navigation are controlled in tests; actual free-provider eligibility/contract, live lookup, real message delivery and target-store production tax execution are not verified.
+## Current scope
 
-## Scope
 Manual WhatsApp receipts with brand templates, explicit consent and preparation audit. Optional email/SMS order/payment receipts and status notifications retain per-store sender settings, preferences and safe retry/delivery audit.
 
-The user selected manual WhatsApp receipt sharing on 14 October 2026 to avoid paid messaging-provider accounts. This is the default receipt-sharing workflow; existing email/SMS delivery remains optional. No SendGrid/Twilio account, API key, phone-number rental or notification worker is needed for WhatsApp sharing.
+- Record separate WhatsApp consent and receipt preferences in Customer Profile.
+- Preview the branded receipt and international recipient number from Order Details, including subtotal, discount, delivery fee, total and payment/balance figures.
+- Recheck consent, phone and financial contents before opening WhatsApp. Reject stale previews, foreign-store orders and invalid phone numbers; allow cancellation before opening.
+- Staff must tap Send in their own WhatsApp app/Web account. Record share preparation and the receipt snapshot, never an automatic send/delivery claim.
+- WhatsApp requires no messaging API credentials, rental number or notification worker. Optional email/SMS providers remain separately configured and disabled by default.
 
-- Record separate WhatsApp consent and enable receipts in Customer Profile.
-- Preview the current branded receipt and international recipient number from Order Details. Include saved jurisdiction/rate/tax evidence and current payment/balance totals.
-- Recheck consent, phone and receipt contents before opening WhatsApp. Reject a stale preview, foreign-store order or invalid/ambiguous phone number. Allow staff to cancel before opening.
-- Open a prefilled WhatsApp app/Web message; staff must tap Send there. Log only share preparation and the receipt snapshot, never claim automatic sending or delivery.
-- Actual WhatsApp transport/account access is outside the server. Browser tests intercept WhatsApp navigation so no real messages are sent.
+## Tax removal
 
-User-requested addition: complete location-specific tax behavior before considering the receipt workflow complete. Existing PR #9 code and synthetic test rates do not establish that actual store taxes are configured or working. Audit the existing implementation and reuse it where correct; identify and implement the remaining gaps.
+The user withdrew the location-tax implementation on 15 October 2026. Tax engines, provider lookup/import, tax-rule administration, estimates, reporting, taxable-service controls and their dedicated screens/routes/tests are removed. A free tax-provider account or credential is no longer a PR #11 prerequisite.
 
-- Resolve applicable tax jurisdictions from the saved store location (country, state/region, city and postal/address information as required). Postal lookup alone does not establish a tax rate or jurisdiction.
-- Apply verified, effective-dated rates and service-specific taxability/exemptions to server-calculated estimates, orders and payments. Determine any required rate-source integration during the implementation audit; do not invent rates.
-- Show the applicable jurisdiction, rate components, taxable amounts and totals consistently in the counter flow, order details and email/SMS receipts.
-- Explain missing or incomplete location/rate configuration and prevent misleading tax results. Preserve historical order tax snapshots and tenant/store isolation.
-- Verify the actual target store's location, applicable rules and complete order/payment/receipt behavior. Record production configuration and acceptance separately from code implementation; live writes require authorization and application access.
+New orders use plain server-validated pricing and no tax charge. Client-supplied tax values cannot add a charge. Existing invoice tax/snapshots and previously stored refund metadata are retained only for historical compatibility; no production data or existing tax tables are deleted. Financial repricing of archived tax invoices is blocked to preserve their recorded amounts. Notes/status updates and gross payment/refund controls remain available.
 
-## Acceptance criteria
-Delivery receipts/events logged; opt-outs respected; correct tenant branding; failed deliveries retry safely; no cross-tenant messages.
+See [current implementation and validation](../PR11_IMPLEMENTATION.md).
 
-Location-based tax acceptance: representative stores in different jurisdictions select the correct rules; applicable taxable/exempt services, effective dates and rounding produce verified totals; receipts reconcile with saved order/payment amounts. Include missing-location/rate cases and negative cross-store/tenant tests. Synthetic fixture success must not be reported as verification of actual store tax configuration.
+## Acceptance and boundaries
 
-## Boundaries
-- Target only mahendraek/FabClean-SaaS; never modify original FabClean.
-- Maintain web and mobile support.
-- Review the implementation and resolve the free-provider acceptance blocker before treating PR #11 as complete.
-- Do not merge until implementation and explicit approval.
+Consent/opt-outs are enforced; receipts reconcile with server totals; messages use the selected store's branding; queue claims/retries remain safe; foreign-store access is denied. Tests must verify removed tax APIs stay unavailable, tax-free new orders reconcile, historical invoices remain intact and gross refund caps remain enforced.
+
+Work only in mahendraek/FabClean-SaaS. Maintain web/mobile support. Do not merge or deploy without explicit approval. Actual external message delivery and physical-device WhatsApp handoff remain outside the local automated checks.

@@ -31,7 +31,7 @@ const server=http.createServer((req,res)=>{let file=path.join(root,decodeURIComp
   await context.route('https://wa.me/**',route=>route.fulfill({contentType:'text/html',body:'<html><body>Controlled WhatsApp preview</body></html>'}));
   const opened=page.waitForEvent('popup'),confirmed=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/orders/'+fixture.order+'/whatsapp-receipt'&&r.request().method()==='POST');
   await page.getByRole('button',{name:'Open WhatsApp',exact:true}).click();assert.equal((await confirmed).status(),200);const popup=await opened;await popup.waitForURL('https://wa.me/**');
-  const link=new URL(popup.url());assert.equal(link.pathname,'/15550102030');assert.match(link.searchParams.get('text'),/Tax: USD 0\.50/);assert.match(link.searchParams.get('text'),/Total: USD 10\.50/);assert.match(link.searchParams.get('text'),/Fixture Illinois \(5%\)/);await popup.close();
+  const link=new URL(popup.url());assert.equal(link.pathname,'/15550102030');assert.doesNotMatch(link.searchParams.get('text'),/Tax:|Recorded tax:/);assert.match(link.searchParams.get('text'),/Total: USD 10\.00/);await popup.close();
   await page.getByText(/Sending and delivery are not tracked by FabClean/).waitFor();
   const events=(await (await call('GET','/customers/'+fixture.customer+'/communication-events')).json()).events;assert.ok(events.some(e=>e.event==='whatsapp_share_prepared'));assert.ok(!events.some(e=>e.event==='delivered'));
   await page.getByRole('button',{name:'Preview WhatsApp receipt',exact:true}).click();await page.getByRole('button',{name:'Open WhatsApp',exact:true}).waitFor();
@@ -39,7 +39,7 @@ const server=http.createServer((req,res)=>{let file=path.join(root,decodeURIComp
   await page.getByRole('button',{name:'Queue email/SMS receipt',exact:true}).click();
   await page.getByText('Receipts & notifications',{exact:true}).waitFor();
   const rows=(await (await call('GET','/notifications/outbox')).json()).notifications;
-  const row=rows.find(r=>r.order_id===fixture.order&&r.channel==='email'&&r.status==='queued');assert.ok(row);assert.equal(row.delivery.receipt.tax,.5);assert.equal(row.delivery.receipt.total,10.5);assert.match(row.message,/Fixture Illinois \(5%\)/);
+  const row=rows.find(r=>r.order_id===fixture.order&&r.channel==='email'&&r.status==='queued');assert.ok(row);assert.equal(row.delivery.receipt.tax,0);assert.equal(row.delivery.receipt.total,10);assert.doesNotMatch(row.message,/Tax:|Recorded tax:/);
   await page.getByRole('button',{name:'Review delivery '+row.id,exact:true}).click();await page.getByRole('button',{name:'Cancel delivery',exact:true}).click();assert.equal((await (await call('GET','/notifications/outbox')).json()).notifications.find(r=>r.id===row.id).status,'queued');
   await page.getByRole('button',{name:'Review delivery '+row.id,exact:true}).click();
   assert.equal((await call('PUT',prefs,{email_opt_in:false})).status(),200);
@@ -48,14 +48,7 @@ const server=http.createServer((req,res)=>{let file=path.join(root,decodeURIComp
   assert.equal((await call('POST','/notifications/outbox/'+row.id+'/dispatch',undefined,fixture.foreign_token)).status(),404);
   await page.goto(base+'/configuration');await page.getByLabel('Notification email sender',{exact:true}).waitFor();await page.getByLabel('Notification email sender',{exact:true}).fill('sender@example.com');saving=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/configuration/store'&&r.request().method()==='PUT');await page.getByRole('button',{name:'Save notification email sender',exact:true}).click();assert.equal((await saving).status(),200);
   await page.getByLabel('Template order_receipt',{exact:true}).fill('Thank you {name} from {business_name}');saving=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/configuration/store'&&r.request().method()==='PUT');await page.getByRole('button',{name:'Save notification templates',exact:true}).click();assert.equal((await saving).status(),200);
-  await page.goto(base+'/taxes');await page.getByText('Tax rate provider',{exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Look up store tax rate',exact:true}).isDisabled(),true);
-  // Mock only provider preview/import UI; backend adapter/import semantics have real PostgreSQL tests.
-  await page.route('**/api/taxes/provider',route=>route.fulfill({json:{provider:'Fixture provider',configured:true,coverage:'Synthetic US lookup',billing_note:'Fixture only'}}));
-  await page.route('**/api/taxes/provider/lookup',route=>route.fulfill({json:{id:'fixture-quote',provider:'Fixture provider',jurisdiction:'Fixture Chicago',rate:'5',note:'Synthetic rate; verify location and services',retrieved_at:'2026-01-01',expires_at:'2026-01-02'}}));
-  await page.route('**/api/taxes/provider/fixture-quote/import',route=>{assert.deepEqual(route.request().postDataJSON(),{jurisdiction_verified:true,service_taxability_verified:true});return route.fulfill({json:{id:'fixture-rate'}});});
-  await page.reload();await page.getByRole('button',{name:'Look up store tax rate',exact:true}).click();await page.getByText('Fixture provider: Fixture Chicago · 5%',{exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Import verified location rate',exact:true}).isDisabled(),true);
-  await page.getByLabel('Verify tax jurisdiction',{exact:true}).click();await page.getByLabel('Verify service taxability',{exact:true}).click();await page.getByRole('button',{name:'Import verified location rate',exact:true}).click();
   await page.screenshot({path:'/tmp/pr11-'+(mobile?'mobile':'desktop')+'.png',fullPage:true});assert.deepEqual(errors,[]);
-  console.log((mobile?'mobile web':'desktop')+': manual WhatsApp preview/cancel/link/opt-out, receipt tax totals, real API consent, foreign denial, sender/templates and controlled provider review UI passed');await context.close();
+  console.log((mobile?'mobile web':'desktop')+': manual WhatsApp preview/cancel/link/opt-out, receipt totals, real API consent, foreign denial, sender/templates passed');await context.close();
  }
 }finally{await browser.close();server.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

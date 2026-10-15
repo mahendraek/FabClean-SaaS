@@ -12,14 +12,14 @@ type Category={id:string;name:string;active:boolean;sort_order:number};
 type Service={
   id:string;business_id?:string;category:string;name:string;description:string;
   pricing_type:"per_item"|"per_lb"|"per_kg"|"per_pair"|"per_panel"|"flat"|"starting_at"|"quote";
-  base_price:number;minimum_price:number;unit_label:string;turnaround_hours:number;taxable:boolean;tax_rate:number;express_enabled:boolean;express_surcharge_percent:number;active:boolean;
+  base_price:number;minimum_price:number;unit_label:string;turnaround_hours:number;express_enabled:boolean;express_surcharge_percent:number;active:boolean;
   pickup_eligible:boolean;delivery_eligible:boolean;reward_eligible:boolean;subscription_eligible:boolean;
   variants:Variant[];modifiers:Modifier[];
 };
 
 const emptyService:Service={
   id:"",business_id:"fabclean",category:"Wash & Fold",name:"",description:"",
-  pricing_type:"per_item",base_price:0,minimum_price:0,unit_label:"item",turnaround_hours:48,taxable:false,tax_rate:0,express_enabled:false,express_surcharge_percent:0,active:true,
+  pricing_type:"per_item",base_price:0,minimum_price:0,unit_label:"item",turnaround_hours:48,express_enabled:false,express_surcharge_percent:0,active:true,
   pickup_eligible:true,delivery_eligible:true,reward_eligible:true,subscription_eligible:false,
   variants:[],modifiers:[]
 };
@@ -160,7 +160,6 @@ export default function Admin(){
       {context?.assignments?.some((a:any)=>a.role==="brand_admin")||context?.is_super_admin?<AdminCard icon={<Sparkle size={21} color={colors.primary}/>} title="Brand & Stores" text="Stores, hierarchy and locations" onPress={()=>router.push("/brand-stores")}/>:null}
       <AdminCard icon={<Gear size={21} color={colors.primary}/>} title="Brand Defaults & Overrides" text="Inherited settings, service prices and offers" onPress={()=>router.push("/configuration")}/>
       <AdminCard icon={<Gear size={21} color={colors.primary}/>} title="Delivery Coverage Map" text="Store radius, polygon zones and address eligibility" onPress={()=>router.push("/coverage")}/>
-      <AdminCard icon={<Wallet size={21} color={colors.primary}/>} title="Location Taxes" text="Dated tax rules, exemptions and reports" onPress={()=>router.push("/taxes")}/>
       <AdminCard icon={<Wallet size={21} color={colors.primary}/>} title="Receipts & Notifications" text="Delivery queue, retries and receipt history" onPress={()=>router.push("/notifications")}/>
       <AdminCard icon={<Truck size={21} color={colors.primary}/>} title="Pickup & Delivery" text="Coverage, slots and schedules" onPress={()=>router.push("/scheduling")}/>
       <AdminCard icon={<UsersThree size={21} color={colors.primary}/>} title="Staff & Roles" text="Access and staff permissions" onPress={()=>router.push("/staff")}/>
@@ -236,7 +235,7 @@ export default function Admin(){
             <Field label="Unit label"><TextInput style={s.input} value={draft.unit_label} onChangeText={v=>setField("unit_label",v)} placeholder="item, lb, pair"/></Field>
             <Field label="Turnaround hours"><TextInput style={s.input} keyboardType="number-pad" value={String(draft.turnaround_hours)} onChangeText={v=>setField("turnaround_hours",Number(v)||0)}/></Field>
           </View>
-          <View style={s.formRow}><Field label="Tax rate %"><TextInput style={s.input} keyboardType="decimal-pad" value={String(draft.tax_rate||0)} onChangeText={v=>setField("tax_rate",Number(v)||0)}/></Field><Field label="Express surcharge %"><TextInput style={s.input} keyboardType="decimal-pad" value={String(draft.express_surcharge_percent||0)} onChangeText={v=>setField("express_surcharge_percent",Number(v)||0)}/></Field></View>
+          <View style={s.formRow}><Field label="Express surcharge %"><TextInput style={s.input} keyboardType="decimal-pad" value={String(draft.express_surcharge_percent||0)} onChangeText={v=>setField("express_surcharge_percent",Number(v)||0)}/></Field></View>
 
           <Text style={s.label}>Availability & eligibility</Text>
           <View style={s.toggleGrid}>
@@ -244,7 +243,7 @@ export default function Admin(){
             <Toggle label="Pickup eligible" value={draft.pickup_eligible} onChange={v=>setField("pickup_eligible",v)}/>
             <Toggle label="Delivery eligible" value={draft.delivery_eligible} onChange={v=>setField("delivery_eligible",v)}/>
             <Toggle label="Reward eligible" value={draft.reward_eligible} onChange={v=>setField("reward_eligible",v)}/>
-            <Toggle label="Subscription eligible" value={draft.subscription_eligible} onChange={v=>setField("subscription_eligible",v)}/><Toggle label="Taxable" value={draft.taxable} onChange={v=>setField("taxable",v)}/><Toggle label="Express service" value={draft.express_enabled} onChange={v=>setField("express_enabled",v)}/>
+            <Toggle label="Subscription eligible" value={draft.subscription_eligible} onChange={v=>setField("subscription_eligible",v)}/><Toggle label="Express service" value={draft.express_enabled} onChange={v=>setField("express_enabled",v)}/>
           </View>
 
           <View style={s.subHead}><Text style={s.sectionTitle}>Variants</Text><Pressable onPress={addVariant} style={s.addSmall}><Plus size={15} color={colors.primary}/><Text style={s.addSmallText}>Add variant</Text></Pressable></View>

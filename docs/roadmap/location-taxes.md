@@ -1,5 +1,7 @@
 # Location-aware taxes
 
+**Removal notice, 15 October 2026:** the user requested deletion of this implementation from the current PR #11 development branch. Active routes, calculation/provider logic, administration and related tests are removed; historical financial data is retained. The release and validation details below are historical evidence, not current development scope. Production is unchanged until an explicitly approved merge/deployment.
+
 Status: ACCEPTED, MERGED AND DEPLOYED at `9e68ce3` — both Render services live on 13 October 2026.
 Priority: P2 — current sequential roadmap item.
 PR: https://github.com/mahendraek/FabClean-SaaS/pull/9

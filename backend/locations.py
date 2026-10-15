@@ -42,7 +42,7 @@ def postal_lookup(code,postal):
     if len(states)!=1:raise HTTPException(409,'Postal code spans multiple states; choose the correct state manually')
     region=states.pop()
     if not region or region not in {s['code'] for s in DATA['subdivisions'].get(code,[])}:raise HTTPException(503,'Postal lookup returned an unknown state')
-    return {'country':code,'state':region,'postal_code':postal,'cities':sorted({p['place name'] for p in places if p.get('place name')}),'source':'Zippopotam.us','note':'Confirm the store address. Postal codes do not determine tax rates or county boundaries.'}
+    return {'country':code,'state':region,'postal_code':postal,'cities':sorted({p['place name'] for p in places if p.get('place name')}),'source':'Zippopotam.us','note':'Confirm the store address. Postal lookup does not verify the full street address.'}
 
 def register(app,s):
     @app.get('/api/locations/options')

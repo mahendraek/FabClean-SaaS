@@ -13,8 +13,7 @@ if url.hostname not in ('localhost','127.0.0.1','::1') or 'test' not in url.path
 f=PostgresIsolationTests;f.setUpClass()
 try:
     with server.db() as c:c.execute("UPDATE stores SET country='US',state='IL',city='Chicago',postal_code='60601',timezone='America/Chicago' WHERE id=%s",(f.stores[0],))
-    f.ok(0,'post','/api/taxes/rules',{'component':'state','jurisdiction':'Fixture Illinois','country':'US','state':'IL','rate':'5','effective_from':'2020-01-01'})
-    f.ok(0,'post','/api/services',{'id':'receipt-service','category':'Test','name':'Receipt fixture wash','pricing_type':'per_item','base_price':10,'taxable':True})
+    f.ok(0,'post','/api/services',{'id':'receipt-service','category':'Test','name':'Receipt fixture wash','pricing_type':'per_item','base_price':10})
     order=f.ok(0,'post','/api/orders',{'customer_name':'Receipt Browser Customer','customer_phone':'+15550102030','customer_email':'receipt-browser@example.com',
         'items':[{'service_id':'receipt-service','service_name':'Receipt fixture wash','quantity':1,'unit_price':10}]})
     f.ok(0,'put','/api/settings',{'notifications_enabled':True,'business_name':'Receipt Fixture Laundry'})
