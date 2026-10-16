@@ -110,3 +110,21 @@ test('failed invitation identity proof preserves an unrelated valid session', as
  await assert.rejects(api.api.post('/auth/owner-invitations/accept', {}), e => e.status === 401);
  assert.equal(api.getStoredToken(), 'valid-current-token');
 });
+for (const platform of ['web', 'ios', 'android']) test(`${platform}: CSV requests retain authentication, scope and HTTP errors`, async () => {
+  const { api, sandbox, calls } = await setup(platform);
+  await api.setStoredSession({id:'report-user'}, 'report-token');
+  sandbox.fetch=async()=>({ok:true,status:200,text:async()=>JSON.stringify({active_brand:{id:'brand-a'},active_store:{id:'store-a'}})});
+  await api.api.get('/context');
+  sandbox.fetch=async (...args)=>{calls.push(args);return {ok:true,status:200,text:async()=>'Brand,Order\r\nA,10\r\n'};};
+  assert.equal(await api.api.getText('/reports/export'), 'Brand,Order\r\nA,10\r\n');
+  assert.equal(calls[0][1].headers['X-Session-Token'],'report-token');
+  assert.equal(calls[0][1].headers['X-Active-Brand-ID'],'brand-a');
+  assert.equal(calls[0][1].headers['X-Active-Store-ID'],'store-a');
+  sandbox.fetch=async()=>({ok:false,status:403,text:async()=>' {"detail":"Brand reporting denied"} '});
+  await assert.rejects(api.api.getText('/reports/export'), /Brand reporting denied/);
+  let complete;
+  sandbox.fetch=()=>new Promise(resolve=>{complete=resolve;});
+  const pending=api.api.getText('/reports/export');await Promise.resolve();api.invalidateRequests();
+  complete({ok:true,status:200,text:async()=>'old brand data'});
+  await assert.rejects(pending,/Active context changed/);
+});

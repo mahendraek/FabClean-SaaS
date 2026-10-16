@@ -4,6 +4,7 @@ import coverage
 import locations
 import sample_data
 import notifications
+import reporting
 import printing
 import base64
 import json
@@ -3496,4 +3497,5 @@ locations.register(app, sys.modules[__name__])
 sample_data.register(app, sys.modules[__name__])
 notifications.register(app, sys.modules[__name__])
 
+reporting.register(app, sys.modules[__name__])
 printing.register(app, sys.modules[__name__])

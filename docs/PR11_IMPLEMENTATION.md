@@ -45,3 +45,7 @@ Deployment remains pending. The existing Render credential is ready, but the pub
 ## Live release — 15 October 2026
 
 Both Render SaaS services are verified live on approved merge `d36b6d6c7efdd84c284f4647460b488991735344`: API deployment `dep-db8aivom7kps73dmrpr0` (15:54:08 IST) and web `dep-db8aivtg1s2s739l43sg` (15:55:19 IST). API startup and web export/upload logs succeeded. This resolves the earlier deployment-access blocker; existing credentials/settings and automatic deployment off were preserved. Public endpoint smoke checks are unverified because the environment proxy blocks the public app hostnames. No real messages or production operational fixture writes occurred. See `DEPLOYMENT_STATUS.md` for release evidence and limitations.
+
+## Public smoke verification — 15 October 2026
+
+After the user enabled the two public app hostnames, all 11 read-only checks passed: PostgreSQL API health; OpenAPI receipt/preferences present and active tax routes absent; protected orders/outbox returning 401 with no-store and trusted-origin CORS; homepage/order-detail/customer-profile/notifications/configuration returning 200 HTML; trusted preflight accepted and an untrusted origin rejected. This supersedes the earlier smoke-access limitation. No messages, production operational writes, environment changes or redeployment were performed. Authenticated production and native-device sharing are still outside this verification.
