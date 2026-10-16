@@ -2,7 +2,24 @@
 
 Updated: 16 October 2026.
 
-## Current live release — PR #13 receipt and garment-tag printing
+## Current live release — PR #12 consolidated reporting and exports
+
+The user explicitly authorized merge and deployment on 16 October 2026. PR #12 merged at `ab3a75663f7b2dcd268707df27f2d656b6bf3240`; its tree exactly matches validated head `820a0ea`. Both exact-head hosted checks passed (`38827644888`, `38827639522`). The combined local gate passed 164 backend tests without skips, 44 frontend tests, TypeScript, 32-route export, all nine desktop/mobile browser suites and 160 load requests without errors. This release retains the PR #13 printing implementation.
+
+Authenticated Render API confirms both services **live** at the approved merge:
+
+| Service | Live deployment | Finished (India time) |
+| --- | --- | --- |
+| API | `dep-db8mng8473hc739d3nsg` | 2026-10-16 05:42:59 IST |
+| WEB | `dep-db8mngl9fdbs73913p8g` | 2026-10-16 05:44:05 IST |
+
+All **15 read-only public smoke checks passed**: PostgreSQL API health; reporting OpenAPI routes with printing retained; authentication, no-store, CORS and request IDs on all four reporting endpoints and the print preview; trusted/untrusted reporting preflight; homepage/reports/hardware/print-preview/order-detail HTML; and freshly fetched JavaScript containing reporting, summary export and printing workflows.
+
+Web: https://fabclean-saas-web.onrender.com/reports · API: https://fabclean-saas-api.onrender.com
+
+No production records, authentication attempts, messages or physical prints were created by verification. Production reporting with a signed-in business user, native sharing and physical printer/media checks remain manual. Existing service commands, credentials and automatic deployment off were preserved; no environment settings changed. This documentation-only follow-up leaves the running services at `ab3a75663f7b2dcd268707df27f2d656b6bf3240`.
+
+## Previous release — PR #13 receipt and garment-tag printing
 
 The user explicitly authorized merge and deployment on 16 October 2026. GitHub confirms PR #13 merged at `a1c012e947daeab9158cb6936217aa7ae7334678`; the merged tree exactly matches accepted head `e67186c`. Both exact-head hosted validation runs passed (`38727121787`, `38727116721`). Full local validation passed 155 backend tests without skips, 41 frontend tests, TypeScript, 32-route export, all eight desktop/mobile browser suites and the zero-error load gate.
 

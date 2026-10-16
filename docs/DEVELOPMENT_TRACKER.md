@@ -5,6 +5,8 @@ Develop one item at a time. Keep future scopes in the backlog; do not implement 
 
 ## Current work
 
+**PR #12 merged and deployed (16 October 2026):** explicit user approval; merge `ab3a75663f7b2dcd268707df27f2d656b6bf3240` is live on both Render services. Both accepted-head hosted checks and all 15 public read-only smoke checks passed. Consolidated reports and exports are released alongside retained PR #13 printing. No numbered roadmap PR remains open; future backlog needs separate prioritization. Signed-in production reporting, physical printers and native devices remain manual acceptance. See [release evidence](DEPLOYMENT_STATUS.md).
+
 **PR #12 current-main integration (16 October 2026):** the user requested continued development. Preserved published implementation `a6ebef9` and integrated accepted main `5d8bc3a`, including released PR #13 printing. Both reporting and printing API registration, fixtures, browser scripts and CI artifacts are retained. Prior PR #12 hosted checks passed. Combined validation now passes 164 backend tests without skips, 44 frontend tests, TypeScript, a 32-route export, all nine desktop/mobile browser suites and 160 load requests with zero errors (176.48 requests/second, worst p95 59.45 ms). Publication updates the same PR; new-head hosted CI is tracked separately. No merge to main, deployment or environment changes. See [reporting notes](PR12_IMPLEMENTATION.md).
 
 **PR #13 merged and deployed (16 October 2026):** user-approved merge `a1c012e947daeab9158cb6936217aa7ae7334678` is live on both Render services. Both exact-head hosted checks and all 13 public read-only smoke checks passed. Printer profiles, receipt/tag previews, raw files and staff-confirmed printing are released. Physical hardware/native acceptance remains manual. PR #12 is unchanged and remains an open draft. See [release evidence](DEPLOYMENT_STATUS.md).
@@ -78,7 +80,7 @@ The implementation adds forced PostgreSQL row-level security on 21 operational t
 | 7 | [#9](https://github.com/mahendraek/FabClean-SaaS/pull/9) | P2 | [Location-aware taxes](roadmap/location-taxes.md) | Merged and Render live at `9e68ce3` | #8 |
 | 8 | [#10](https://github.com/mahendraek/FabClean-SaaS/pull/10) | P2 | [OpenStreetMap delivery coverage](roadmap/service-area-maps.md) | Merged and Render live at `bf41434` | #5, #8 |
 | 9 | [#11](https://github.com/mahendraek/FabClean-SaaS/pull/11) | P2 | [Manual WhatsApp receipts and communication preferences](roadmap/notifications-receipts.md) | Tax implementation removed; full local validation passed; not merged/deployed | #4, #8 |
-| 10 | [#12](https://github.com/mahendraek/FabClean-SaaS/pull/12) | P2 | [Consolidated reporting/exports](roadmap/cross-store-reporting.md) | Implemented; local and hosted CI passed; open draft | #4, #5, #11 |
+| 10 | [#12](https://github.com/mahendraek/FabClean-SaaS/pull/12) | P2 | [Consolidated reporting/exports](roadmap/cross-store-reporting.md) | Merged at `ab3a756`; both Render services live; smoke checks passed | #4, #5, #11 |
 
 | 11 | [#13](https://github.com/mahendraek/FabClean-SaaS/pull/13) | P2 | [Receipt and garment-tag printing](roadmap/receipt-tag-printing.md) | Merged at `a1c012e`; both Render services live; smoke checks passed | Accepted main through #11; independent of #12 |
 

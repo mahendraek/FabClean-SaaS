@@ -1,6 +1,6 @@
 # PR #12 — consolidated reporting and CSV exports
 
-Development authorized 15 October 2026. Implementation is locally validated; not merged or deployed.
+Development authorized 15 October 2026. Implementation is merged and deployed at `ab3a75663f7b2dcd268707df27f2d656b6bf3240` with explicit user approval on 16 October 2026.
 
 ## Delivered behavior
 
@@ -42,3 +42,7 @@ Native device sharing requires manual iOS/Android acceptance; automated mobile c
 Continued development explicitly authorized by the user. Merged accepted main `5d8bc3a` into the existing PR branch, preserving published PR #12 head `a6ebef9` and all released PR #13 printing behavior. Resolved API registration, package scripts, fixture/cleanup, workflow-artifact and tracker conflicts by retaining reporting and printing together. This is an update of PR #12; main and production are not changed.
 
 The complete combined gate passed: **164 backend tests without skips, 44 frontend tests, clean TypeScript, 32-route Expo export, all nine desktop/mobile browser suites** and a 160-request load gate with zero errors (176.48 requests/second; worst p95 59.45 ms). Both reporting isolation/reconciliation/exports and physical-print-confirmation/idempotency tests execute in this gate. New-head hosted CI remains a separate check. Native device sharing and production reporting smoke checks remain pending acceptance/merge/deployment authorization.
+
+## Released 16 October 2026
+
+Merge `ab3a75663f7b2dcd268707df27f2d656b6bf3240` is live on both Render services. Both accepted-head hosted checks and all 15 public read-only smoke checks passed; the combined local gate passed 164 backend tests, 44 frontend tests and nine browser suites. See [deployment evidence](DEPLOYMENT_STATUS.md). Signed-in production reporting/native sharing and physical printer acceptance remain manual. No production fixtures or operational writes were used for smoke checks.

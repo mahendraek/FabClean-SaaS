@@ -1,6 +1,6 @@
 # Consolidated brand and store reporting
 
-Status: IMPLEMENTED / LOCALLY VALIDATED — awaiting review; not merged or deployed.
+Status: MERGED AND DEPLOYED at `ab3a75663f7b2dcd268707df27f2d656b6bf3240` with explicit user approval on 16 October 2026.
 Priority: P2 (development authorized on 15 October 2026)
 
 ## Scope
@@ -14,3 +14,5 @@ Brand admins see only their brand; filters by time/store/status; totals reconcil
 - Maintain web and mobile support.
 - Implementation and validation evidence: [PR #12 notes](../PR12_IMPLEMENTATION.md).
 - Do not merge until implementation and explicit approval.
+
+Release: both Render services verified live at the approved merge; 15 read-only public smoke checks passed. See [release evidence](../DEPLOYMENT_STATUS.md).
