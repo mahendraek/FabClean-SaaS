@@ -165,6 +165,7 @@ export default function Admin(){
       <AdminCard icon={<UsersThree size={21} color={colors.primary}/>} title="Staff & Roles" text="Access and staff permissions" onPress={()=>router.push("/staff")}/>
       <AdminCard icon={<Wallet size={21} color={colors.primary}/>} title="Financial" text="Payments and financial activity" onPress={()=>router.push("/financial")}/>
       <AdminCard icon={<ChartBar size={21} color={colors.primary}/>} title="Reports" text="Operational reporting" onPress={()=>router.push("/reports")}/>
+      <AdminCard icon={<ChartBar size={21} color={colors.primary}/>} title="Store taxes" text="Verified tax policies, invoices and refunds" onPress={()=>router.push("/taxes")}/>
       <AdminCard icon={<HardDrives size={21} color={colors.primary}/>} title="Hardware" text="Printers, labels and devices" onPress={()=>router.push("/hardware")}/>
       <AdminCard icon={<Gear size={21} color={colors.primary}/>} title="More Settings" text="Offers, subscriptions and login history" onPress={()=>router.push("/retention")}/>
     </View>

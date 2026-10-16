@@ -122,10 +122,10 @@ export function receiptHtml(data:any){
 
     <div class="summary">
       ${order.coverage_snapshot?`<div class="sumrow"><span>Service coverage confirmed</span><span>${esc(order.coverage_snapshot.distance)} ${esc(order.coverage_snapshot.unit)}</span></div>`:""}
-      <div class="sumrow"><span>Subtotal</span><span>${money(order.subtotal)}</span></div>
+      <div class="sumrow"><span>Subtotal${order.tax_snapshot?.pricing_mode==="inclusive"?" (tax included)":""}</span><span>${money(order.subtotal)}</span></div>
       ${Number(order.discount||0)?`<div class="sumrow"><span>Discount</span><span>-${money(order.discount)}</span></div>`:""}
       ${(order.tax_snapshot?.breakdown||[]).map((row:any)=>`<div class="sumrow"><span>${esc(row.jurisdiction)} (${esc(row.rate)}%)</span><span>${money(row.amount)}</span></div>`).join("")}
-      ${Number(order.tax||0)?`<div class="sumrow"><span>Recorded tax</span><span>${money(order.tax)}</span></div>`:""}
+      ${(Number(order.tax||0)||order.tax_snapshot?.engine_version===2)?`<div class="sumrow"><span>${order.tax_snapshot?.engine_version===2?(order.tax_snapshot.pricing_mode==="inclusive"?"Tax included":"Tax total"):"Recorded tax"}</span><span>${money(order.tax)}</span></div>`:""}
       ${(receipt.payments||[]).filter((p:any)=>p.transaction_type==="refund"&&Number(p.tax_amount||0)>0).map((p:any)=>`<div class="sumrow"><span>Refund tax credit (${esc(p.receipt_number)})</span><span>-${money(p.tax_amount)}</span></div>`).join("")}
       ${Number(order.delivery_fee||0)?`<div class="sumrow"><span>Pickup / Delivery</span><span>${money(order.delivery_fee)}</span></div>`:""}
       <div class="sumrow total"><span>Total</span><span>${money(order.total)}</span></div>

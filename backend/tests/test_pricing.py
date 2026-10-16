@@ -34,12 +34,13 @@ class PricingAPITests(unittest.TestCase):
         return self.f.ok(0,'post','/api/orders',{'customer_name':'Pricing fixture','customer_phone':uuid.uuid4().hex,
             'items':[{'service_id':'shared-service','service_name':'Wash','quantity':1,'unit_price':10}],**changes})
 
-    def test_removed_tax_routes_and_configuration_are_unavailable(self):
+    def test_legacy_provider_routes_and_generic_tax_configuration_stay_unavailable(self):
         paths=server.app.openapi()['paths']
-        self.assertFalse(any(path.startswith('/api/taxes') or path=='/api/financial/taxes' for path in paths))
+        self.assertIn('/api/taxes/policy',paths)
+        self.assertNotIn('/api/taxes/provider',paths)
         for path in ('/api/taxes/rules','/api/taxes/provider','/api/financial/taxes'):
             self.assertEqual(self.f.request(0,'get',path).status_code,404)
-        self.assertEqual(self.f.request(0,'post','/api/taxes/estimate',{'items':[]}).status_code,404)
+        self.assertEqual(self.f.request(0,'post','/api/taxes/estimate',{'items':[]}).status_code,200)
         self.assertEqual(self.f.request(0,'put','/api/settings',{'delivery_fee_taxable':True}).status_code,400)
         service=self.f.ok(0,'get','/api/admin/services')['services'][0]
         self.assertNotIn('taxable',service);self.assertNotIn('tax_rate',service)

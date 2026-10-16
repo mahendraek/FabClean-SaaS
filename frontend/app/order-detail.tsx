@@ -14,7 +14,7 @@ type OrderEvent={id:string;event_type:string;from_value?:string|null;to_value?:s
 type Garment={id:string;garment_code:string;garment_index:number;service_name:string;last_stage:string;assembled:boolean;tag_print_count:number};
 type Order={
   id:string;order_number:string;barcode_value:string;status:string;total:number;subtotal:number;
-  discount:number;tax:number;tax_snapshot?:any;payment_status:string;payment_method:string;notes:string;
+  discount:number;tax:number;tax_snapshot?:any;currency?:string;payment_status:string;payment_method:string;notes:string;
   due_at?:string|null;pricing_status?:string;
   coverage_snapshot?:any;
   fulfillment_type?:string;service_area_name?:string;scheduled_slot_label?:string;service_address?:string;service_postal_code?:string;delivery_fee?:number;pickup_date?:string;pickup_slot_label?:string;delivery_date?:string;delivery_slot_label?:string;
@@ -29,6 +29,7 @@ export default function OrderDetail(){
   const params=useLocalSearchParams<{id?:string}>();
   const id=String(params.id||"");
   const [order,setOrder]=useState<Order|null>(null);
+  const [taxEstimate,setTaxEstimate]=useState<any>(null),[taxError,setTaxError]=useState(""),[taxBusy,setTaxBusy]=useState(false);
   const [services,setServices]=useState<Service[]>([]);
   const [lines,setLines]=useState<Line[]>([]);
   const [notes,setNotes]=useState("");
@@ -75,7 +76,16 @@ export default function OrderDetail(){
   }
   useEffect(()=>{load();},[id]);
 
-  const total=lines.reduce((sum,line)=>sum+Math.round((Number(line.quantity)*Number(line.unit_price)+Number.EPSILON)*100)/100,0)-(order?.discount||0)+(order?.delivery_fee||0)+(order?.tax||0);
+  const pricingChanged=!!order&&JSON.stringify(lines)!==JSON.stringify(order.items);
+  const total=pricingChanged?(taxEstimate?.total??order?.total??0):(order?.total??0);
+  const currency=order?.currency||order?.tax_snapshot?.currency||'UNSPECIFIED';
+  useEffect(()=>{
+    let active=true;setTaxError('');setTaxEstimate(null);
+    if(!order||!pricingChanged){setTaxBusy(false);return;}
+    setTaxBusy(true);
+    const timer=setTimeout(()=>{api.post<any>('/orders/'+encodeURIComponent(order.id)+'/tax-estimate',{items:lines}).then(result=>{if(active)setTaxEstimate(result);}).catch(e=>{if(active)setTaxError(e.message);}).finally(()=>{if(active)setTaxBusy(false);});},250);
+    return()=>{active=false;clearTimeout(timer);};
+  },[order,lines,pricingChanged]);
 
   function addService(s:Service){
     const i=lines.findIndex(x=>x.service_id===s.id);
@@ -86,7 +96,7 @@ export default function OrderDetail(){
   function remove(i:number){setLines(v=>v.filter((_,j)=>j!==i));}
 
   async function save(){
-    if(!order)return;
+    if(!order||(pricingChanged&&(taxBusy||taxError||!taxEstimate)))return;
     setSaving(true);setErr("");setOk("");
     try{
       const updated=await api.put<Order>("/orders/"+order.id,{
@@ -94,7 +104,7 @@ export default function OrderDetail(){
         pricing_status:pricingStatus,quick_dropoff:false,
         bag_count:0
       });
-      setOrder(updated);setOk("Order updated");
+      setOrder(updated);setLines(updated.items||[]);setOk("Order updated");
       const h=await api.get<{events:OrderEvent[]}>("/orders/"+order.id+"/events");setEvents(h.events||[]);
     }catch(e:any){setErr(e.message||"Could not update order");}
     finally{setSaving(false);}
@@ -104,6 +114,7 @@ export default function OrderDetail(){
   async function draftMessage(kind:string){setAiBusy(true);setErr("");try{const x=await api.post<any>("/ai/orders/"+id+"/communication-draft",{kind});setAiDraft(x.draft||"");}catch(e:any){setErr(e.message||"Could not draft message");}finally{setAiBusy(false);}}
   async function recordPayment(){
     if(!order)return;
+    if(pricingChanged){setErr("Save or discard price changes before recording payment");return;}
     const amount=Number(paymentAmount||0);
     if(!amount){setErr("Enter a payment amount");return;}
     setPaymentBusy(true);setErr("");setOk("");
@@ -116,6 +127,7 @@ export default function OrderDetail(){
   }
   async function recordRefund(){
     if(!order)return;
+    if(pricingChanged){setErr("Save or discard price changes before recording a refund");return;}
     const amount=Number(paymentAmount||0);
     if(!amount){setErr("Enter a refund amount");return;}
     setPaymentBusy(true);setErr("");setOk("");
@@ -143,7 +155,7 @@ export default function OrderDetail(){
       </View>
       <View style={s.headerActions}>
         <Pressable style={s.printBtn} onPress={()=>router.push({pathname:"/inspection",params:{id:order.id}})}><Text style={s.printText}>Inspection</Text></Pressable><Pressable style={s.printBtn} onPress={()=>router.push({pathname:"/garment-tags",params:{id:order.id}})}><Printer size={17} color="#fff"/><Text style={s.printText}>Garment Tags</Text></Pressable><Pressable style={s.printBtn} onPress={()=>router.push({pathname:"/garment-assembly",params:{id:order.id}})}><Barcode size={17} color="#fff"/><Text style={s.printText}>Assembly</Text></Pressable>
-        <View style={s.headerMetric}><Text style={s.metricLabel}>Current total</Text><Text style={s.metricValue}>{"$"+total.toFixed(2)}</Text></View>
+        <View style={s.headerMetric}><Text style={s.metricLabel}>Current total</Text><Text style={s.metricValue}>{taxBusy?"Calculating…":currency+" "+Number(total).toFixed(2)}</Text></View>
       </View>
     </View>
 
@@ -215,7 +227,7 @@ export default function OrderDetail(){
           <Pressable accessibilityRole="button" onPress={printReceipt} style={s.receiptBtn}><Printer size={16} color={colors.primary}/><Text style={s.receiptText}>Print Receipt</Text></Pressable>
           <WhatsAppReceipt key={order.id} orderId={order.id} customerId={order.customer.id}/>
           {optionalDeliveryEnabled&&<Pressable accessibilityRole="button" onPress={()=>void api.post('/orders/'+order.id+'/send-receipt').then(()=>router.push('/notifications')).catch(e=>setErr(e.message))} style={s.receiptBtn}><Text style={s.receiptText}>Queue email/SMS receipt</Text></Pressable>}
-          {payments.length?<View style={{marginTop:12}}>{payments.map((p:any)=><View key={p.id} style={s.paymentRow}><View style={{flex:1}}><Text style={s.rowStrong}>{pretty(p.transaction_type)} · {pretty(p.payment_method)}</Text><Text style={s.meta}>{p.receipt_number} · {p.staff_name||"Staff"}{p.transaction_type==="refund"&&Number(p.tax_amount||0)>0?" · Recorded tax credit $"+Number(p.tax_amount).toFixed(2):""}{p.reference_number?" · "+p.reference_number:""}</Text></View><Text style={s.amount}>{Number(p.amount||0)<0?"-$"+Math.abs(Number(p.amount||0)).toFixed(2):"$"+Number(p.amount||0).toFixed(2)}</Text></View>)}</View>:<Text style={s.meta}>No payment transactions yet.</Text>}
+          {payments.length?<View style={{marginTop:12}}>{payments.map((p:any)=><View key={p.id} style={s.paymentRow}><View style={{flex:1}}><Text style={s.rowStrong}>{pretty(p.transaction_type)} · {pretty(p.payment_method)}</Text><Text style={s.meta}>{p.receipt_number} · {p.staff_name||"Staff"}{p.transaction_type==="refund"&&Number(p.tax_amount||0)>0?" · Tax credit "+currency+" "+Number(p.tax_amount).toFixed(2):""}{p.reference_number?" · "+p.reference_number:""}</Text></View><Text style={s.amount}>{Number(p.amount||0)<0?"-$"+Math.abs(Number(p.amount||0)).toFixed(2):"$"+Number(p.amount||0).toFixed(2)}</Text></View>)}</View>:<Text style={s.meta}>No payment transactions yet.</Text>}
         </View>
 
         <View style={s.panel}>
@@ -226,10 +238,11 @@ export default function OrderDetail(){
           <View style={s.chips}>{["unpaid","partial","paid"].map(x=><Pressable key={x} onPress={()=>setPaymentStatus(x)} style={[s.chip,paymentStatus===x&&s.chipOn]}><Text style={[s.chipText,paymentStatus===x&&s.chipTextOn]}>{pretty(x)}</Text></Pressable>)}</View>
           <Text style={s.label}>Status</Text>
           <View style={s.statusList}>{statuses.map(x=><Pressable key={x} onPress={()=>setStatus(x)} style={[s.statusBtn,status===x&&s.statusBtnOn]}><Text style={[s.statusText,status===x&&s.statusTextOn]}>{pretty(x)}</Text></Pressable>)}</View>
-          {Number(order.tax||0)>0&&<Text>Recorded tax: ${Number(order.tax).toFixed(2)} · Historical invoice pricing is read-only.</Text>}
-          <View style={s.total}><Text style={s.totalLabel}>{pricingStatus==="final"?"Final total":"Estimated total"}</Text><Text style={s.totalValue}>{"$"+total.toFixed(2)}</Text></View>
+          {order.tax_snapshot?<View><Text>{order.tax_snapshot.pricing_mode==='inclusive'?'Tax included':'Tax'}: {currency} {Number(pricingChanged&&taxEstimate?taxEstimate.tax:order.tax).toFixed(2)}</Text><Text style={s.help}>{order.tax_snapshot.engine_version===2?'Original verified tax policy is saved with this invoice; pricing is frozen after payment.':'Historical invoice pricing is read-only.'}</Text></View>:null}
+          {taxError?<Text accessibilityRole="alert" style={s.err}>{taxError}</Text>:null}
+          <View style={s.total}><Text style={s.totalLabel}>{pricingStatus==="final"?"Final total":"Estimated total"}</Text><Text style={s.totalValue}>{taxBusy?"Calculating…":currency+" "+Number(total).toFixed(2)}</Text></View>
           {err?<Text style={s.err}>{err}</Text>:null}{ok?<View style={s.okRow}><CheckCircle size={16} color={colors.success}/><Text style={s.ok}>{ok}</Text></View>:null}
-          <Pressable onPress={save} disabled={saving||pricingStatus==="final"&&!lines.length} style={[s.saveBtn,(saving||pricingStatus==="final"&&!lines.length)&&{opacity:.45}]}><Text style={s.saveText}>{saving?"Saving…":"Save Order Changes"}</Text></Pressable>
+          <Pressable onPress={save} disabled={saving||(pricingChanged&&(taxBusy||!!taxError||!taxEstimate))||pricingStatus==="final"&&!lines.length} style={[s.saveBtn,(saving||(pricingChanged&&(taxBusy||!!taxError||!taxEstimate))||pricingStatus==="final"&&!lines.length)&&{opacity:.45}]}><Text style={s.saveText}>{saving?"Saving…":"Save Order Changes"}</Text></Pressable>
           {pricingStatus==="final"&&!lines.length?<Text style={s.help}>Add at least one service before finalizing pricing.</Text>:null}
         </View>
       </View>

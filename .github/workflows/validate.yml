@@ -73,6 +73,7 @@ jobs:
             /tmp/pr6-validation-load.json
             /tmp/handoffs-*.png
             /tmp/reports-*.png
+            /tmp/taxes-*.png
             /tmp/printing-*.png
             /tmp/printing-*.pdf
           if-no-files-found: ignore

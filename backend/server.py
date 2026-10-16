@@ -6,6 +6,7 @@ import sample_data
 import notifications
 import reporting
 import printing
+import taxation
 import base64
 import json
 import os
@@ -247,6 +248,7 @@ def init_db():
             coverage.install(conn)
             notifications.install(conn)
             notifications.install_delivery_events(conn)
+            taxation.install(conn)
             return
         conn.execute("""
             CREATE TABLE IF NOT EXISTS app_settings (
@@ -750,6 +752,7 @@ def init_db():
             coverage.install(conn)
             notifications.install(conn)
             notifications.install_delivery_events(conn)
+            taxation.install(conn)
 
 @app.on_event("startup")
 def startup():
@@ -847,15 +850,23 @@ def reward_balance(customer_id: str):
 def get_or_create_referral_code(customer_id: str):
     if not DATABASE_URL:
         return "FC-" + customer_id[:6].upper()
-    with db() as conn:
+    with db() as conn, conn.transaction():
+        key = json.dumps(['referral-code', *(current_scope.get() or ('', '')), customer_id])
+        conn.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', (key,))
         row = conn.execute("SELECT * FROM referrals WHERE referrer_customer_id=%s ORDER BY created_at LIMIT 1", (customer_id,)).fetchone()
         if row:
             return row["referral_code"]
         code = "FC-" + customer_id.replace("-", "")[:6].upper()
-        while conn.execute("SELECT 1 FROM referrals WHERE referral_code=%s", (code,)).fetchone():
-            code = "FC-" + uuid.uuid4().hex[:6].upper()
-        conn.execute("INSERT INTO referrals (id, referrer_customer_id, referral_code) VALUES (%s,%s,%s)", (str(uuid.uuid4()), customer_id, code))
-        return code
+        # The code has a global unique constraint while lookups obey store RLS.
+        # A conflict can belong to an invisible store; resolve it atomically
+        # without querying or exposing that store's referral/customer data.
+        for _ in range(8):
+            row = conn.execute("INSERT INTO referrals (id,referrer_customer_id,referral_code) VALUES (%s,%s,%s) ON CONFLICT(referral_code) DO NOTHING RETURNING referral_code", (str(uuid.uuid4()), customer_id, code)).fetchone()
+            if row:
+                return row['referral_code']
+            code = "FC-" + uuid.uuid4().hex[:12].upper()
+        raise HTTPException(503, 'Could not allocate a referral code; retry shortly')
+
 
 def calculate_offer_discount(offer: dict, subtotal: float, is_first_order: bool):
     if not offer.get("active", True): return 0
@@ -1921,7 +1932,7 @@ def create_order(payload: OrderCreate, x_session_token: str | None = Header(defa
                 raise HTTPException(400, "Selected pickup time slot is unavailable")
             if needs_delivery and (not delivery_slot or not delivery_slot["delivery_enabled"]):
                 raise HTTPException(400, "Selected delivery time slot is unavailable")
-    price_result=pricing.quote([i.model_dump() for i in payload.items],discount,delivery_fee)
+    price_result=taxation.quote(sys.modules[__name__],[i.model_dump() for i in payload.items],discount,delivery_fee)
     total=price_result["total"]
     finalized_items = []
     for index, item in enumerate(payload.items, 1):
@@ -1938,7 +1949,8 @@ def create_order(payload: OrderCreate, x_session_token: str | None = Header(defa
         items=finalized_items,
         subtotal=subtotal,
         discount=discount,
-        tax=0,
+        tax=price_result["tax"],
+        tax_snapshot=price_result["tax_snapshot"],
         currency=get_settings_value().get("currency", "USD"),
         total=total,
         payment_method=payload.payment_method,
@@ -2100,19 +2112,22 @@ def create_order_payment(order_id: str, payload: dict, x_session_token: str | No
     method=str(payload.get("payment_method","cash")).lower()
     if method not in ("cash","card","other"):
         raise HTTPException(400,"Invalid payment method")
+    tax_amount,tax_breakdown=None,None
     if kind=='refund':
         rows,_,_=payment_totals(order_id,order_total)
         pricing.validate_refund(data,rows,abs(amount))
+        tax_amount,tax_breakdown=taxation.refund_credit(data,rows,abs(amount))
     customer=data.get("customer") or {}
     pid=str(uuid.uuid4())
     receipt="FCR-"+datetime.now(timezone.utc).strftime("%Y%m%d")+"-"+uuid.uuid4().hex[:6].upper()
     item={"id":pid,"receipt_number":receipt,"order_id":order_id,"customer_id":customer.get("id"),"transaction_type":kind,"payment_method":method,"amount":round(amount,2),"reference_number":str(payload.get("reference_number","")),"notes":str(payload.get("notes","")),"staff_id":staff.get("id"),"staff_name":staff.get("name","")}
+    item.update(tax_amount=tax_amount,tax_breakdown=tax_breakdown)
     if not DATABASE_URL:
         item["created_at"]=datetime.now(timezone.utc).isoformat()
         memory_payments.append(item)
     else:
         with db() as conn:
-            row=conn.execute("INSERT INTO payment_transactions (id,receipt_number,order_id,customer_id,transaction_type,payment_method,amount,reference_number,notes,staff_id,staff_name) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *",(pid,receipt,order_id,customer.get("id"),kind,method,amount,item["reference_number"],item["notes"],staff.get("id"),staff.get("name",""))).fetchone()
+            row=conn.execute("INSERT INTO payment_transactions (id,receipt_number,order_id,customer_id,transaction_type,payment_method,amount,reference_number,notes,staff_id,staff_name,tax_amount,tax_breakdown) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb) RETURNING *",(pid,receipt,order_id,customer.get("id"),kind,method,amount,item["reference_number"],item["notes"],staff.get("id"),staff.get("name",""),tax_amount,json.dumps(tax_breakdown) if tax_breakdown is not None else None)).fetchone()
             item=dict(row)
     status=sync_order_payment_status(order_id,order_total)
     record_order_event(order_id,"payment_recorded",None,amount,f"{kind.title()} via {method}",{"receipt_number":receipt,"staff_id":staff.get("id"),"staff_name":staff.get("name","")})
@@ -2153,9 +2168,11 @@ def update_order(order_id: str, payload: dict, x_session_token: str | None = Hea
         before = dict(order)
         monetary=any(key in updates and updates[key]!=order.get(key) for key in ('items','discount','delivery_fee'))
         if monetary:
-            if order.get('tax_snapshot') is not None or order.get('tax', 0):
+            if ((order.get('tax_snapshot') or {}).get('engine_version') != 2) and (order.get('tax_snapshot') is not None or order.get('tax', 0)):
                 raise HTTPException(409, 'Historical invoices with recorded tax are read-only for repricing; create a new order')
             rows,_,_=payment_totals(order_id,float(order.get('total',0)))
+            if (order.get('tax_snapshot') or {}).get('engine_version') == 2 and rows:
+                raise HTTPException(409,'Taxed invoice pricing is frozen after a payment; create a new order or adjustment')
             if any(r.get('transaction_type')=='refund' for r in rows):raise HTTPException(409,'Pricing cannot change after a refund')
         for key, value in updates.items():
             order[key] = value
@@ -2168,7 +2185,11 @@ def update_order(order_id: str, payload: dict, x_session_token: str | None = Hea
                 item["barcode_value"] = base_barcode + "-" + str(index).zfill(3)
         order["items"] = items
         if monetary:
-            order.update(pricing.quote(items,order.get('discount',0),order.get('delivery_fee',0)))
+            snapshot=order.get('tax_snapshot') or {}
+            if snapshot.get('engine_version') == 2:
+                order.update(taxation.quote(sys.modules[__name__],items,order.get('discount',0),order.get('delivery_fee',0),snapshot=snapshot))
+            else:
+                order.update(pricing.quote(items,order.get('discount',0),order.get('delivery_fee',0)))
         return before, order
 
     if not DATABASE_URL:
@@ -3499,3 +3520,5 @@ notifications.register(app, sys.modules[__name__])
 
 reporting.register(app, sys.modules[__name__])
 printing.register(app, sys.modules[__name__])
+
+taxation.register(app, sys.modules[__name__])

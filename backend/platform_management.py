@@ -112,7 +112,7 @@ def route_feature(path):
     if path.startswith('/api/subscriptions') or path.endswith('/subscriptions'):return 'subscriptions'
     if path.startswith(('/api/handoffs','/api/handoff-destinations')):return 'handoffs'
     if path.startswith('/api/ai/'):return 'ai'
-    if path.startswith(('/api/reports','/api/financial/')):return 'reports'
+    if path.startswith(('/api/reports','/api/financial/','/api/taxes/report')):return 'reports'
     return None
 
 
