@@ -1,10 +1,10 @@
 import { themedStyles } from "@/src/theme";
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { ArrowLeft, Printer, Sparkle } from "phosphor-react-native";
 import { api } from "@/src/api";
-import { defaultHardwareProfile, downloadRaw, generateTspl, generateZpl, openLabelPrint, profileFromSettings, HardwareProfile } from "@/src/hardware";
+import { defaultHardwareProfile, profileFromSettings, HardwareProfile } from "@/src/hardware";
 import { Code128 } from "@/src/Code128";
 import { colors } from "@/src/theme";
 
@@ -22,57 +22,29 @@ export default function GarmentTags(){
 
   async function load(){
     if(!id)return;
+    setOrder(null);setGarments([]);
     setErr("");
     try{
       const [o,g,cfg]=await Promise.all([api.get<Order>("/orders/"+encodeURIComponent(id)),api.get<any>("/orders/"+encodeURIComponent(id)+"/garments"),api.get<any>("/settings")]);
       setOrder(o);setGarments(g.garments||[]);setHardware(profileFromSettings(cfg));
     }catch(e:any){setErr(e.message||"Could not load garment tags");}
   }
-  useEffect(()=>{load();},[id]);
+  useFocusEffect(useCallback(()=>{void load();},[id]));
 
-  async function printAll(){
-    if(!order)return;
-    openLabelPrint(order.order_number+" garment tags",garments.map(g=>({code:g.garment_code,order:order.order_number,line1:g.service_name,line2:"Item "+g.garment_index+" / "+garments.length})),hardware);
-    try{
-      await Promise.all(garments.map(g=>api.post("/orders/"+order.id+"/garments/"+encodeURIComponent(g.garment_code)+"/reprint",{})));
-      await load();
-    }catch(e:any){setErr(e.message||"Could not record tag printing");}
-  }
-
-  function printOrderTag(){
-    if(!order)return;
-    openLabelPrint(order.order_number+" order tag",[{code:order.barcode_value||order.order_number.replace("-",""),order:order.order_number,line1:order.customer.name,line2:"ORDER TAG"}],hardware);
-  }
-
-  function exportRaw(){
-    if(!order)return;
-    if(hardware.printer_mode==="zpl"){
-      downloadRaw(order.order_number+"-garment-tags.zpl",generateZpl(order,garments,hardware));
-    }else if(hardware.printer_mode==="tspl"){
-      downloadRaw(order.order_number+"-garment-tags.tspl",generateTspl(order,garments,hardware));
-    }else{
-      if(typeof window!=="undefined")window.print();
-    }
-  }
-
-  async function reprintOne(code:string){
-    const g=garments.find(x=>x.garment_code===code);
-    if(order&&g)openLabelPrint(code,[{code,order:order.order_number,line1:g.service_name,line2:"Item "+g.garment_index+" / "+garments.length}],hardware);
-    try{
-      await api.post("/orders/"+id+"/garments/"+encodeURIComponent(code)+"/reprint",{});
-      await load();
-    }catch(e:any){setErr(e.message||"Could not record tag reprint");}
-  }
+  function printAll(){router.push({pathname:'/print-preview',params:{id,kind:'garments'}});}
+  function printOrderTag(){router.push({pathname:'/print-preview',params:{id,kind:'order'}});}
+  function exportRaw(){printAll();}
+  function reprintOne(code:string){router.push({pathname:'/print-preview',params:{id,kind:'garments',code}});}
 
   if(!order)return <View style={s.loading}><Text>{err||"Loading garment tags…"}</Text></View>;
   return <ScrollView style={{backgroundColor:colors.soft}} contentContainerStyle={s.page}>
     <View style={s.noPrint}><View style={s.top}><Pressable onPress={()=>router.push({pathname:"/order-detail",params:{id:id}})} style={s.back}><ArrowLeft size={18} color={colors.ink}/><Text style={s.backText}>Order</Text></Pressable><View style={s.brand}><Sparkle size={16} color={colors.primary}/><Text style={s.brandText}>FabClean Garment Tags</Text></View></View>
-      <View style={s.header}><View><Text style={s.kicker}>GARMENT TAGGING</Text><Text style={s.title}>{order.order_number}</Text><Text style={s.sub}>{order.customer.name} · {garments.length} physical garment tag(s) · {hardware.printer_mode.toUpperCase()} profile</Text></View><View style={s.headerActions}><Pressable onPress={printOrderTag} style={s.rawBtn}><Text style={s.rawText}>Print Order Tag</Text></Pressable><Pressable onPress={printAll} style={s.printBtn}><Printer size={17} color="#fff"/><Text style={s.printText}>Print All Garments</Text></Pressable><Pressable onPress={exportRaw} style={s.rawBtn}><Text style={s.rawText}>{hardware.printer_mode==="browser"?"Print / Preview":"Download "+hardware.printer_mode.toUpperCase()}</Text></Pressable></View></View>
+      <View style={s.header}><View><Text style={s.kicker}>GARMENT TAGGING</Text><Text style={s.title}>{order.order_number}</Text><Text style={s.sub}>{order.customer.name} · {garments.length} garment tag(s) · {hardware.printer_mode.toUpperCase()} profile</Text></View><View style={s.headerActions}><Pressable accessibilityRole="button" onPress={printOrderTag} style={s.rawBtn}><Text style={s.rawText}>Print Order Tag</Text></Pressable><Pressable accessibilityRole="button" onPress={printAll} style={s.printBtn}><Printer size={17} color="#fff"/><Text style={s.printText}>Print All Garments</Text></Pressable><Pressable accessibilityRole="button" onPress={exportRaw} style={s.rawBtn}><Text style={s.rawText}>{hardware.printer_mode==="browser"?"Print / Preview":"Download "+hardware.printer_mode.toUpperCase()}</Text></Pressable></View></View>
       {err?<Text style={s.err}>{err}</Text>:null}
     </View>
     <View style={s.tags}>{garments.map(g=><View key={g.id} style={s.tag}>
       <Text style={s.brandSmall}>FAB CLEAN</Text><Text style={s.order}>{order.order_number}</Text><Text style={s.item}>{g.service_name}</Text><Text style={s.position}>Item {g.garment_index} / {garments.length}</Text><View style={s.barcode}><Code128 value={g.garment_code} height={48} moduleWidth={1.5}/></View><Text style={s.code}>{g.garment_code}</Text>
-      <Pressable style={[s.reprint,s.noPrint]} onPress={()=>reprintOne(g.garment_code)}><Text style={s.reprintText}>Reprint · {g.tag_print_count||0}</Text></Pressable>
+      <Pressable style={[s.reprint,s.noPrint]} onPress={()=>reprintOne(g.garment_code)}><Text style={s.reprintText}>Preview / reprint · {g.tag_print_count||0}</Text></Pressable>
     </View>)}</View>
   </ScrollView>;
 }

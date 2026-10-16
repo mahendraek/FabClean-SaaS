@@ -6,8 +6,6 @@ import { ArrowLeft, CheckCircle, Minus, Plus, Sparkle, Trash } from "phosphor-re
 import { api } from "@/src/api";
 import { colors } from "@/src/theme";
 import { imageForCategory } from "@/src/service-media";
-import { downloadRaw, generateTspl, generateZpl, openLabelPrint, profileFromSettings } from "@/src/hardware";
-import { printOrderReceipt } from "@/src/receipt";
 import { Code128 } from "@/src/Code128";
 import { CalendarDatePicker } from "@/src/CalendarDatePicker";
 import { CoverageAddress, AddressPin } from "@/src/CoverageAddress";
@@ -190,33 +188,14 @@ export default function WalkIn(){
     finally{setSaving(false);}
   }
 
-  async function printCreatedTags(kind:"order"|"garments"){
-    if(!created)return;
-    setErr("");
-    try{
-      const cfg=await api.get<any>("/settings");
-      const hardware=profileFromSettings(cfg);
-      if(kind==="order"){
-        const tag={id:"order",garment_code:created.barcode_value||created.order_number.replace("-",""),garment_index:1,service_name:created.customer.name,last_stage:"tagged",assembled:false,tag_print_count:0};
-        if(hardware.printer_mode==="zpl")downloadRaw(created.order_number+"-order-tag.zpl",generateZpl(created,[tag],hardware));
-        else if(hardware.printer_mode==="tspl")downloadRaw(created.order_number+"-order-tag.tspl",generateTspl(created,[tag],hardware));
-        else openLabelPrint(created.order_number+" order tag",[{code:tag.garment_code,order:created.order_number,line1:created.customer.name,line2:"ORDER TAG"}],hardware);
-        return;
-      }
-      const result=await api.get<any>("/orders/"+encodeURIComponent(created.id)+"/garments");
-      const garments=result.garments||[];
-      if(!garments.length)throw new Error("No garment tags were generated for this order");
-      if(hardware.printer_mode==="zpl")downloadRaw(created.order_number+"-garment-tags.zpl",generateZpl(created,garments,hardware));
-      else if(hardware.printer_mode==="tspl")downloadRaw(created.order_number+"-garment-tags.tspl",generateTspl(created,garments,hardware));
-      else openLabelPrint(created.order_number+" garment tags",garments.map((g:any)=>({code:g.garment_code,order:created.order_number,line1:g.service_name,line2:"Item "+g.garment_index+" / "+garments.length})),hardware);
-      await Promise.all(garments.map((g:any)=>api.post("/orders/"+created.id+"/garments/"+encodeURIComponent(g.garment_code)+"/reprint",{})));
-    }catch(e:any){setErr(e.message||"Could not print tags");}
+  function printCreatedTags(kind:"order"|"garments"){
+    if(created)router.push({pathname:'/print-preview',params:{id:created.id,kind}});
   }
 
   async function printReceipt(){
     if(!created)return;
     setErr("");
-    try{await printOrderReceipt(created.id);}
+    try{router.push({pathname:'/print-preview',params:{id:created.id,kind:'receipt'}});}
     catch(e:any){setErr(e.message||"Could not print receipt");}
   }
 
@@ -297,7 +276,7 @@ export default function WalkIn(){
       <View style={s.successActions}>
         <Pressable style={s.primary} onPress={()=>printCreatedTags("order")}><Text style={s.primaryText}>Print Order Tag</Text></Pressable>
         <Pressable style={s.primary} onPress={()=>printCreatedTags("garments")}><Text style={s.primaryText}>Print All Garment Tags</Text></Pressable>
-        <Pressable style={s.primary} onPress={printReceipt}><Text style={s.primaryText}>Print Receipt</Text></Pressable>
+        <Pressable accessibilityRole="button" style={s.primary} onPress={printReceipt}><Text style={s.primaryText}>Print Receipt</Text></Pressable>
         <Pressable style={s.secondary} onPress={()=>router.push({pathname:"/order-detail",params:{id:created.id}})}><Text style={s.secondaryText}>Open Order</Text></Pressable>
         <Pressable style={s.secondary} onPress={()=>{setCreated(null);setLines([]);setSelectedCustomer(null);setCustomerQuery("");setCustomerResults([]);setName("");setPhone("");setEmail("");setNotes("");setDueAt("");setFulfillmentType("walk_in");setPickupDate("");setPickupSlotId("");setDeliveryDate("");setDeliverySlotId("");setPromoCode("");setPromoDiscount(0);setPromoMessage("");}}><Text style={s.secondaryText}>New Order</Text></Pressable>
       </View>

@@ -1,0 +1,29 @@
+# PR #13 — receipt and garment-tag printing
+
+Development authorized on 15 October 2026. Branch `codex/pr-13-receipt-tag-printing` starts from accepted main `6de9507`, independently of the unmerged reporting PR #12. Merge and deployment were explicitly authorized on 16 October 2026.
+
+## Behavior
+
+- Hardware settings support 58 mm, 80 mm and A4 receipts; browser/system-driver, ZPL and TSPL tag modes; 203/300 dpi; bounded label sizes and gap. Validation applies to both brand configuration and store settings. Legacy invalid fields fall back to safe defaults when read. Admin authorization and inherited/store-scoped persistence remain unchanged.
+- Walk-in, order detail and garment tag screens lead to a shared print preview. Receipts preserve the saved order/invoice currency, signed payment ledger balances and read-only historical tax amounts. Unclassified historical currency is explicit rather than assumed USD. Estimated invoices are labelled. Browser print documents contain escaped data and are opened directly from a user gesture; blocked popups produce a visible error.
+- Tags support individual selection and batches up to 100 labels, order tags and calibration output. Browser labels use one exact-size page per tag; drivers must use the matching media at actual size/100% scale. Raw ZPL/TSPL files use validated dimensions and original barcode identifiers; command-bearing text is neutralized. Identifiers that cannot fit or be encoded fail explicitly rather than silently changing the barcode.
+- Opening a preview, exporting commands or cancelling does not increment garment print counts. After physical output, staff explicitly choose **Confirm physical print**. This records a staff attestation, not printer delivery confirmation. Receipt/order-tag confirmations do not increment garment counts. Duplicate or concurrent retries of the same request are idempotent; conflicting reuse is rejected. Counts and audit are atomic in PostgreSQL. Existing legacy explicit `/reprint` API remains compatible; current screens no longer call it automatically.
+- Browser printing works on desktop/mobile web when the browser/device supports a printer driver or system print service. Native apps explicitly direct users to a browser for system printing; native ZPL/TSPL command sharing uses React Native Share. Native sharing passes text to the chosen application and does not claim direct USB/Bluetooth printing or a binary file attachment.
+
+## Affordable hardware defaults
+
+The user has not selected hardware and requested budget-friendly, accessible options. Default to an **80 mm USB thermal receipt printer with a supported local OS driver** and a **203 dpi desktop label printer supporting ZPL or TSPL**, with 50 × 25 mm temporary label media. Existing A4 office printers remain usable for receipts. Compare local driver support, consumables and warranty before buying; no particular vendor/model has been tested or price guaranteed.
+
+Ordinary thermal paper/labels are temporary identification media. Washing, dry-cleaning and heat-sealing need suitable durable media and compatible hardware. This PR does not claim ordinary labels survive those processes. Use the calibration label and scan test before a batch. Printer USB/network bridges, ESC/POS transport, cash drawers, physical POS terminals and payment integration are outside this PR.
+
+## Isolation and persistence
+
+No new schema, persistence tables, RLS policies, dependencies or environment settings. The authenticated store context and forced RLS protect preview/order/garment reads. Confirmation uses the existing order transaction lock and `order_events` audit; scoped counts and audit commit or roll back together. The client retries an uncertain confirmation with the same request identifier. Foreign orders/garments fail without partial updates. The generated browser print document remains a snapshot; reload after order/payment changes. Print windows/files can contain customer receipt details and should be closed/handled as normal receipts.
+
+## Validation
+
+The complete `scripts/validate.sh` gate passed on 15 October 2026: **155 backend tests without skips, 41 frontend unit tests, clean TypeScript, 32-route Expo web export and all eight desktop/mobile browser suites**. The 160-request load gate had zero errors at 163.65 requests/second; worst p95 was 70.35 ms. Hosted CI remains a separate check. Targeted checks pass for printer profile bounds and legacy defaults, store/brand isolation, immutable receipt amounts, concurrent confirmation retries, count rollback on audit failure, HTML escaping, raw command safety, media dimensions, original barcode identity, missing currency and popup/native errors. The full repository gate includes backend PostgreSQL, local load, frontend unit/TypeScript/web export, retained browser suites and new desktop/mobile printing checks with generated PDF page counts. No physical printer, production operations or real external messages are used in automated tests. Actual printer/media and native-device acceptance remain manual.
+
+## Released 16 October 2026
+
+PR #13 merged at `a1c012e947daeab9158cb6936217aa7ae7334678`; both Render services are live at that exact commit. Both accepted-head hosted validation checks and all 13 read-only public smoke checks passed. See [deployment evidence](DEPLOYMENT_STATUS.md). Physical hardware and native-device acceptance remain manual. PR #12 was not merged or deployed.

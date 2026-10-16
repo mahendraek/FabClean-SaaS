@@ -29,10 +29,16 @@ Reporting requires PostgreSQL; memory-only development returns 503. Inactive sto
 
 ## Publication
 
-The existing draft [PR #12](https://github.com/mahendraek/FabClean-SaaS/pull/12) contains implementation head `b34a10550e6dc09df61025952ffd25778a575dfc`, whose tree exactly matches local implementation `3013f25`. Publication used the authenticated GitHub Git API because native Git transport is blocked. The commit preserves accepted main `6de9507` and planning head `2246383` as parents; no planning history was discarded. Hosted CI is running; its result is not yet claimed. This documentation-only follow-up preserves the locally validated application/test tree.
+The existing draft [PR #12](https://github.com/mahendraek/FabClean-SaaS/pull/12) contains implementation head `b34a10550e6dc09df61025952ffd25778a575dfc`, whose tree exactly matches local implementation `3013f25`. Publication used the authenticated GitHub Git API because native Git transport is blocked. The commit preserves accepted main `6de9507` and planning head `2246383` as parents; no planning history was discarded. Both initial hosted validation runs subsequently passed (`38723707214` and `38723700931`). This documentation-only follow-up preserves the locally validated application/test tree.
 
 ## Validation
 
 The complete `scripts/validate.sh` gate passed on 15 October 2026: **157 backend tests without skips, 39 frontend unit tests, clean TypeScript, a 31-route Expo web export and all eight desktop/mobile browser suites** (context, handoffs, platform, configuration, coverage, admin locations, notifications and reports). The local load gate completed 160 requests with zero errors at 171.29 requests/second; worst p95 was 73.36 ms. A subsequent frontend unit run also passed all 39 tests after strengthening CSV active-context assertions. Coverage includes real PostgreSQL reconciliation and negative authorization, timezone/DST boundaries, CSV safety, current role revocation, report size limits, authenticated CSV responses on web/iOS/Android, and desktop/mobile web browser filters, actual pagination, downloads and failure recovery.
 
 Native device sharing requires manual iOS/Android acceptance; automated mobile checks run mobile web. Production smoke checks and deployment are deferred until merge/deployment approval.
+
+## Current-main integration — 16 October 2026
+
+Continued development explicitly authorized by the user. Merged accepted main `5d8bc3a` into the existing PR branch, preserving published PR #12 head `a6ebef9` and all released PR #13 printing behavior. Resolved API registration, package scripts, fixture/cleanup, workflow-artifact and tracker conflicts by retaining reporting and printing together. This is an update of PR #12; main and production are not changed.
+
+The complete combined gate passed: **164 backend tests without skips, 44 frontend tests, clean TypeScript, 32-route Expo export, all nine desktop/mobile browser suites** and a 160-request load gate with zero errors (176.48 requests/second; worst p95 59.45 ms). Both reporting isolation/reconciliation/exports and physical-print-confirmation/idempotency tests execute in this gate. New-head hosted CI remains a separate check. Native device sharing and production reporting smoke checks remain pending acceptance/merge/deployment authorization.
