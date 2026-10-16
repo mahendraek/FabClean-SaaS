@@ -122,7 +122,7 @@ class Order(BaseModel):
     subtotal: float
     discount: float = 0
     tax: float = 0
-    # Read-only compatibility for historical invoices. New orders do not calculate tax.
+    # Frozen invoice evidence: archived invoices remain read-only; opt-in v2 policies calculate new tax.
     tax_snapshot: Optional[dict] = None
     currency: Optional[str] = None
     total: float

@@ -1,0 +1,42 @@
+const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=require('node:fs'),http=require('node:http'),path=require('node:path');
+const fixture=JSON.parse(fs.readFileSync(process.env.TAXATION_TEST_FIXTURES,'utf8'));
+const api=process.env.TAXATION_TEST_API||'http://127.0.0.1:8005';
+if(!['127.0.0.1','localhost'].includes(new URL(api).hostname))throw new Error('Disposable local API required');
+const root=path.resolve(__dirname,'../dist');
+const server=http.createServer((req,res)=>{let file=path.join(root,decodeURIComponent(new URL(req.url,'http://local').pathname));if(!file.startsWith(root+'/')){res.writeHead(403);return res.end();}if(fs.existsSync(file)&&fs.statSync(file).isDirectory())file=path.join(file,'index.html');if(!fs.existsSync(file))file+='.html';if(!fs.existsSync(file)){res.writeHead(404);return res.end();}res.setHeader('Content-Type',file.endsWith('.js')?'application/javascript':file.endsWith('.html')?'text/html':'application/octet-stream');fs.createReadStream(file).pipe(res);});
+(async()=>{const browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_EXECUTABLE,args:['--no-sandbox']});try{
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;
+ for(const mobile of [false,true]){
+  const context=await browser.newContext({viewport:mobile?{width:390,height:844}:{width:1280,height:900},isMobile:mobile,hasTouch:mobile});const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.addInitScript(f=>{localStorage.setItem('fabclean_session',f.token);localStorage.setItem('fabclean_staff',JSON.stringify({id:f.user,name:'Tax Manager',role:'manager'}));},fixture);
+  await page.route('**/api/**',async route=>{const u=new URL(route.request().url()),response=await route.fetch({url:api+u.pathname+u.search});await route.fulfill({response,headers:{...response.headers(),'access-control-allow-origin':'*'}});});
+  async function call(method,route,data,token=fixture.token){return page.request.fetch(api+'/api'+route,{method,headers:{'X-Session-Token':token},...(data?{data}:{})});}
+  // Reset only this disposable store's policy, never production settings.
+  let cfg=await (await call('GET','/taxes/policy')).json();
+  const fields=['enabled','pricing_mode','components','services','delivery_fee_taxable','effective_on','source_note'];
+  let policy=Object.fromEntries(fields.map(k=>[k,cfg.versions[0].policy[k]]));policy={...policy,enabled:false,effective_on:cfg.today,components:[{name:'Synthetic state component',rate:'5'},{name:'Synthetic local component',rate:'2.5'}]};
+  assert.equal((await call('POST','/taxes/policy',{expected_revision:cfg.revision,policy})).status(),200);
+  await page.goto(base+'/taxes');await page.getByText('Currently active: Disabled',{exact:true}).waitFor();
+  const before=await (await call('GET','/taxes/policy')).json();
+  await page.getByLabel('Enable store tax',{exact:true}).click();await page.getByLabel('Tax component 1 rate (%)',{exact:true}).fill('5');await page.getByLabel('Tax component 2 rate (%)',{exact:true}).fill('2.5');await page.getByLabel('Verified rate source and classification notes',{exact:true}).fill('Synthetic browser fixture rates, not legal jurisdiction guidance');
+  await page.getByRole('button',{name:'Review tax policy',exact:true}).click();await page.getByRole('button',{name:'Cancel tax policy',exact:true}).click();assert.equal((await (await call('GET','/taxes/policy')).json()).revision,before.revision);
+  await page.getByRole('button',{name:'Review tax policy',exact:true}).click();const published=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/taxes/policy'&&r.request().method()==='POST');await page.getByRole('button',{name:'Confirm tax policy',exact:true}).click();assert.equal((await published).status(),200);await page.getByText('Tax policy version saved. Existing invoices are unchanged.',{exact:true}).waitFor();
+  await page.route('**/api/taxes/estimate',route=>route.fulfill({status:503,headers:{'access-control-allow-origin':'*'},contentType:'application/json',body:JSON.stringify({detail:'Controlled tax estimate outage'})}));
+  await page.goto(base+'/walk-in');await page.getByText('Wash',{exact:true}).click();await page.getByPlaceholder('Customer name *',{exact:true}).fill('Synthetic taxable counter '+Date.now());await page.getByPlaceholder('Phone *',{exact:true}).fill('555'+Date.now());await page.getByText('Controlled tax estimate outage',{exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Create Order + Garment Barcodes',exact:true}).isDisabled(),true);await page.unroute('**/api/taxes/estimate');await page.getByRole('button',{name:'Retry tax estimate',exact:true}).click();await page.getByText('Tax added: USD 0.38',{exact:true}).waitFor();
+  const created=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/orders'&&r.request().method()==='POST');await page.getByText('Create Order + Garment Barcodes',{exact:true}).click();const response=await created;assert.equal(response.status(),200);const order=await response.json();assert.equal(order.tax,.38);assert.equal(order.total,5.38);assert.equal(order.tax_snapshot.engine_version,2);
+  // A later rate change must not rewrite the existing invoice or its printed receipt.
+  cfg=await (await call('GET','/taxes/policy')).json();policy=Object.fromEntries(fields.map(k=>[k,cfg.active.policy[k]]));policy.components=[{name:'Another synthetic rate',rate:'20'}];policy.effective_on=cfg.today;
+  assert.equal((await call('POST','/taxes/policy',{expected_revision:cfg.revision,policy})).status(),200);
+  await page.goto(base+'/order-detail?id='+order.id);await page.getByText('Tax: USD 0.38',{exact:true}).filter({visible:true}).waitFor();
+  await page.getByRole('button',{name:'Print Receipt',exact:true}).click();await page.getByText('Tax: USD 0.38',{exact:true}).filter({visible:true}).waitFor();const popupWait=page.waitForEvent('popup');await page.getByRole('button',{name:'Open print document',exact:true}).click();const popup=await popupWait;await popup.getByText('Tax total',{exact:true}).waitFor();assert.match(await popup.locator('body').innerText(),/USD 0.38/);await popup.close();await page.getByRole('button',{name:'Cancel confirmation',exact:true}).click();
+  let payment=await call('POST','/orders/'+order.id+'/payments',{amount:5.38});assert.equal(payment.status(),200);
+  let refund=await call('POST','/orders/'+order.id+'/payments',{amount:2,transaction_type:'refund'});assert.equal(refund.status(),200);assert.equal((await refund.json()).payment.tax_amount,.14);
+  refund=await call('POST','/orders/'+order.id+'/payments',{amount:3.38,transaction_type:'refund'});assert.equal(refund.status(),200);assert.equal((await refund.json()).payment.tax_amount,.24);
+  assert.equal((await call('PUT','/orders/'+order.id,{discount:1})).status(),409);
+  assert.equal((await call('GET','/orders/'+order.id+'/receipt',undefined,fixture.foreign_token)).status(),404);
+  await page.goto(base+'/taxes');await page.getByRole('button',{name:'Load tax report',exact:true}).click();await page.getByText('Recorded tax less credits: 0.00',{exact:true}).waitFor();const download=page.waitForEvent('download');await page.getByRole('button',{name:'Export tax CSV',exact:true}).click();const csv=fs.readFileSync(await (await download).path(),'utf8');assert.match(csv,/refund_tax_credits/);assert.match(csv,/USD/);
+  await page.screenshot({path:'/tmp/taxes-'+(mobile?'mobile':'desktop')+'.png',fullPage:true});
+  await page.route('**/api/taxes/report?**',route=>route.fulfill({status:503,headers:{'access-control-allow-origin':'*'},contentType:'application/json',body:JSON.stringify({detail:'Controlled tax report outage'})}));await page.getByRole('button',{name:'Load tax report',exact:true}).click();await page.getByText('Controlled tax report outage',{exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Export tax CSV',exact:true}).isDisabled(),true);await page.unroute('**/api/taxes/report?**');
+  assert.deepEqual(errors,[]);console.log((mobile?'mobile web':'desktop')+': review/cancel/publish, taxable checkout, frozen invoice/print, refund credits, CSV, report failure and foreign denial passed');await context.close();
+ }
+}finally{await browser.close();server.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

@@ -28,6 +28,7 @@ platform_fixture_path=$(mktemp /tmp/fabclean-platform-XXXXXX.json)
 configuration_fixture_path=$(mktemp /tmp/fabclean-configuration-XXXXXX.json)
 coverage_fixture_path=$(mktemp /tmp/fabclean-coverage-XXXXXX.json)
 admin_fixture_path=$(mktemp /tmp/fabclean-admin-location-XXXXXX.json)
+taxation_fixture_path=$(mktemp /tmp/fabclean-taxation-XXXXXX.json)
 reporting_fixture_path=$(mktemp /tmp/fabclean-reporting-XXXXXX.json)
 printing_fixture_path=$(mktemp /tmp/fabclean-printing-XXXXXX.json)
 notification_fixture_path=$(mktemp /tmp/fabclean-notification-XXXXXX.json)
@@ -45,9 +46,10 @@ FABCLEAN_TEST_DATABASE_URL="$FABCLEAN_TEST_DATABASE_URL" "$python_bin" -m tests.
 FABCLEAN_TEST_DATABASE_URL="$FABCLEAN_TEST_DATABASE_URL" "$python_bin" -m tests.create_notification_browser_fixture "$notification_fixture_path"
 "$python_bin" -m tests.create_reporting_browser_fixture "$reporting_fixture_path"
 "$python_bin" -m tests.create_printing_browser_fixture "$printing_fixture_path"
+"$python_bin" -m tests.create_taxation_browser_fixture "$taxation_fixture_path"
 DATABASE_URL="$FABCLEAN_TEST_DATABASE_URL" "$python_bin" -m uvicorn server:app --host 127.0.0.1 --port 8005 --no-access-log > /tmp/pr6-validation-api.log 2>&1 &
 api_pid=$!
-trap 'kill "$api_pid" 2>/dev/null || true; rm -f "$fixture_path" "$platform_fixture_path" "$configuration_fixture_path" "$coverage_fixture_path" "$admin_fixture_path" "$notification_fixture_path" "$printing_fixture_path" "$reporting_fixture_path"' EXIT
+trap 'kill "$api_pid" 2>/dev/null || true; rm -f "$fixture_path" "$platform_fixture_path" "$configuration_fixture_path" "$coverage_fixture_path" "$admin_fixture_path" "$notification_fixture_path" "$printing_fixture_path" "$reporting_fixture_path" "$taxation_fixture_path"' EXIT
 "$python_bin" - <<'PY'
 import time,urllib.request
 for attempt in range(30):
@@ -86,3 +88,5 @@ NOTIFICATION_TEST_FIXTURES="$notification_fixture_path" npm run test:notificatio
 PRINTING_TEST_FIXTURES="$printing_fixture_path" npm run test:printing:browser
 
 REPORTING_TEST_FIXTURES="$reporting_fixture_path" npm run test:reports:browser
+
+TAXATION_TEST_FIXTURES="$taxation_fixture_path" npm run test:taxes:browser
