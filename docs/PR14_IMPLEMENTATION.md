@@ -32,3 +32,7 @@ Synthetic rates are test data only. Browser checks use local fixtures; no actual
 ## Acceptance and activation
 
 The starting assumption is manually verified store-sourced rates. The user has not yet confirmed the first jurisdiction or manual versus provider-managed rates. Confirm these and obtain verified rates/service tax treatment before enabling a production policy. Automatic provider lookup, destination sourcing, exemption certificates, compound taxes and filing are outside this starting scope. Physical printer and native-device acceptance remain manual. Merge and deployment require separate user approval; environment settings are untouched.
+
+## Release status — 21 October 2026
+
+User-approved PR #14 merged at `f0c813a2f54c8625d208dc200c145c3a1196e66a`; both services are live at that exact merge. Both accepted-head hosted checks and all 18 public release smoke checks passed. See [deployment evidence](DEPLOYMENT_STATUS.md). No production policy was enabled. Laundry/dry-cleaning tax treatment and signed-in production activation remain pending; the old admin session returns 401.

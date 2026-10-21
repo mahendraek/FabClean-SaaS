@@ -1,9 +1,11 @@
 # FabClean development tracker
 
-Updated: 16 October 2026. This is the canonical work queue for `mahendraek/FabClean-SaaS`.
+Updated: 21 October 2026. This is the canonical work queue for `mahendraek/FabClean-SaaS`.
 Develop one item at a time. Keep future scopes in the backlog; do not implement or merge another roadmap PR as part of the current item.
 
 ## Current work
+
+**PR #14 merged and deployed (21 October 2026):** user explicitly approved merge/deployment. Approved merge `f0c813a2f54c8625d208dc200c145c3a1196e66a` is live on both Render services; its tree exactly matches accepted implementation `09c0c64`. Both exact-head hosted validation runs passed (`38831836043`, `38831832124`), and all 18 public read-only release smoke checks passed. No production tax policy was enabled or changed. Store-level activation and verified laundry/dry-cleaning classifications remain pending; the previously supplied admin session now returns 401. See [release evidence](DEPLOYMENT_STATUS.md). Earlier entries below are historical.
 
 **PR #14 — store tax policies (16 October 2026):** development authorized after PR #12 release. New manual, store-sourced policies remain disabled by default; no archived settings or real rates are activated. Includes dated immutable policy versions, explicit service/fee treatment, inclusive/exclusive estimates and invoices, frozen receipt breakdowns, capped refund credits and scoped reporting/CSV. Full local validation passed: 180 backend tests, 46 frontend tests, TypeScript, 33-route export, ten desktop/mobile browser suites and zero-error load checks. Jurisdiction/rate-source confirmation and actual verified rates are pending before activation. No merge, deployment or environment changes. See [implementation and acceptance](PR14_IMPLEMENTATION.md). Earlier current-work entries below are release history.
 

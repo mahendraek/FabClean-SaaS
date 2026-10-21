@@ -1,8 +1,27 @@
 # Render deployment status
 
-Updated: 16 October 2026.
+Updated: 21 October 2026.
 
-## Current live release — PR #12 consolidated reporting and exports
+## Current live release — PR #14 store tax policies
+
+The user explicitly authorized merge and deployment on 21 October 2026. PR #14 merged at `f0c813a2f54c8625d208dc200c145c3a1196e66a`. Its tree exactly matches accepted head `09c0c641fc68fecda3b796fe512c3ccc18fdea5c`. Both exact-head hosted validation runs passed: [38831836043](https://github.com/mahendraek/FabClean-SaaS/actions/runs/38831836043) and [38831832124](https://github.com/mahendraek/FabClean-SaaS/actions/runs/38831832124). The full local gate previously passed 180 backend tests without skips, 46 frontend tests, TypeScript, 33 exported routes, ten desktop/mobile browser suites and zero-error load checks. Post-merge hosted run `39557129790` was still running when release evidence was recorded; it is separate from the passed accepted-head checks.
+
+Authenticated Render API confirms both services **live** at that approved merge:
+
+| Service | Live deployment | Finished (India time) |
+| --- | --- | --- |
+| API | `dep-dbc5tslg1s2s7395tmm0` | 2026-10-21 12:14:12 IST |
+| WEB | `dep-dbc5tsrbc2fs73bdodeg` | 2026-10-21 12:15:36 IST |
+
+All **18 public read-only smoke checks passed**: PostgreSQL health; tax OpenAPI endpoints with reporting/printing retained; unauthenticated boundaries for tax policy/report/new and saved estimates plus reporting; no-store/request IDs/trusted-origin CORS on protected reads; trusted/untrusted tax preflight; homepage, taxes, reports, hardware, print-preview, walk-in and order-detail HTML; successful published JavaScript retrieval; and tax/report/printing workflows in the fresh bundle.
+
+Web: https://fabclean-saas-web.onrender.com/taxes · API: https://fabclean-saas-api.onrender.com
+
+No production policy, rate, service classification or invoice was changed by this release verification. The feature defaults to disabled and billing activation remains pending an enabled, verified store policy. The prior FabClean session binding is present, but an authenticated policy read returned 401 (sign-in required); signed-in production tax acceptance remains unverified. Address research previously verified 1380 N Meacham Rd, Schaumburg IL 60173-4806, Cook County, location `01601164R00`, general merchandise 10.25% as of 16 October 2026. That retail-rate lookup does not establish laundry/dry-cleaning taxability. Native devices and physical printers remain manual acceptance.
+
+Service commands, credentials and automatic-deployment-off settings were preserved. No cloud environment settings were changed. This documentation-only record does not redeploy the application.
+
+## Previous release — PR #12 consolidated reporting and exports
 
 The user explicitly authorized merge and deployment on 16 October 2026. PR #12 merged at `ab3a75663f7b2dcd268707df27f2d656b6bf3240`; its tree exactly matches validated head `820a0ea`. Both exact-head hosted checks passed (`38827644888`, `38827639522`). The combined local gate passed 164 backend tests without skips, 44 frontend tests, TypeScript, 32-route export, all nine desktop/mobile browser suites and 160 load requests without errors. This release retains the PR #13 printing implementation.
 
