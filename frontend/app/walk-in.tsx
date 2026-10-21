@@ -29,6 +29,7 @@ function addDays(value:string,days:number){
 export default function WalkIn(){
   const router=useRouter();
   const params=useLocalSearchParams<{customerId?:string}>();
+  const [taxEstimate,setTaxEstimate]=useState<any>(null),[taxError,setTaxError]=useState(""),[taxBusy,setTaxBusy]=useState(false),[taxRetry,setTaxRetry]=useState(0),[currency,setCurrency]=useState("UNSPECIFIED");
   const [services,setServices]=useState<Service[]>([]);
   const [lines,setLines]=useState<Line[]>([]);
   const [name,setName]=useState("");
@@ -65,7 +66,7 @@ export default function WalkIn(){
       api.get<{slots:Slot[];pickup_enabled?:boolean;delivery_enabled?:boolean}>("/scheduling/availability"),
       api.get<any>("/settings")
     ]).then(([svc,sched,cfg])=>{
-      setServices(svc.services);setSlots(sched.slots||[]);
+      setCurrency(cfg.currency||"UNSPECIFIED");setServices(svc.services);setSlots(sched.slots||[]);
       setCapabilities({
         pickup_enabled:cfg.pickup_enabled??sched.pickup_enabled??false,
         delivery_enabled:cfg.delivery_enabled??sched.delivery_enabled??false,
@@ -99,7 +100,14 @@ export default function WalkIn(){
     if(!allowed){setFulfillmentType("walk_in");setPickupDate("");setPickupSlotId("");setDeliveryDate("");setDeliverySlotId("");}
   },[capabilities.pickup_enabled,capabilities.delivery_enabled]);
   const deliveryFee=0;
-  const orderTotal=Math.max(0,total-promoDiscount);
+  const orderTotal=taxEstimate?.total??Math.max(0,total-promoDiscount);
+  useEffect(()=>{
+    let active=true;setTaxEstimate(null);setTaxError('');
+    if(!lines.length){setTaxBusy(false);return;}
+    setTaxBusy(true);
+    const timer=setTimeout(()=>{api.post<any>('/taxes/estimate',{items:lines,discount:promoDiscount,delivery_fee:deliveryFee}).then(result=>{if(active){setTaxEstimate(result);setCurrency(result.currency||result.tax_snapshot?.currency||"UNSPECIFIED");}}).catch(e=>{if(active)setTaxError(e.message||'Could not calculate tax');}).finally(()=>{if(active)setTaxBusy(false);});},250);
+    return()=>{active=false;clearTimeout(timer);};
+  },[lines,promoDiscount,deliveryFee,taxRetry]);
   useEffect(()=>{setPromoDiscount(0);setPromoMessage("");},[total,selectedCustomer?.id]);
   useEffect(()=>{
     if(!created?.id){setSuccessSettings({});setSuccessGarments([]);return;}
@@ -164,6 +172,7 @@ export default function WalkIn(){
   async function save(){
     setSaving(true);setErr("");
     try{
+      if(taxBusy||taxError||!taxEstimate)throw new Error('Wait for a valid tax estimate before creating the order');
       if(fulfillmentType!=='walk_in'&&(!addressPin||addressPin.result.eligible===false))throw new Error('Confirm the service address pin and check coverage first');
       const o=await api.post<any>("/orders",{
         customer_id:selectedCustomer?.id||null,customer_name:name.trim(),customer_phone:phone.trim(),customer_email:email.trim(),
@@ -253,10 +262,11 @@ export default function WalkIn(){
         </View>
 
         <View style={s.receiptTotals}>
-          <View style={s.receiptTotalRow}><Text style={s.receiptText}>Subtotal</Text><Text style={s.receiptStrong}>{"$"+Number(created.subtotal||0).toFixed(2)}</Text></View>
-          {Number(created.discount||0)>0?<View style={s.receiptTotalRow}><Text style={s.receiptText}>Discount</Text><Text style={s.receiptStrong}>{"-$"+Number(created.discount||0).toFixed(2)}</Text></View>:null}
-          {Number(created.delivery_fee||0)>0?<View style={s.receiptTotalRow}><Text style={s.receiptText}>Pickup & delivery</Text><Text style={s.receiptStrong}>{"$"+Number(created.delivery_fee||0).toFixed(2)}</Text></View>:null}
-          <View style={[s.receiptTotalRow,s.receiptGrandTotal]}><Text style={s.receiptGrandText}>Total</Text><Text style={s.receiptGrandText}>{"$"+Number(created.total||0).toFixed(2)}</Text></View>
+          <View style={s.receiptTotalRow}><Text style={s.receiptText}>Subtotal</Text><Text style={s.receiptStrong}>{(created.currency||"UNSPECIFIED")+" "+Number(created.subtotal||0).toFixed(2)}</Text></View>
+          {Number(created.discount||0)>0?<View style={s.receiptTotalRow}><Text style={s.receiptText}>Discount</Text><Text style={s.receiptStrong}>{"-"+(created.currency||"UNSPECIFIED")+" "+Number(created.discount||0).toFixed(2)}</Text></View>:null}
+          {Number(created.delivery_fee||0)>0?<View style={s.receiptTotalRow}><Text style={s.receiptText}>Pickup & delivery</Text><Text style={s.receiptStrong}>{(created.currency||"UNSPECIFIED")+" "+Number(created.delivery_fee||0).toFixed(2)}</Text></View>:null}
+          {created.tax_snapshot?<View style={s.receiptTotalRow}><Text style={s.receiptText}>{created.tax_snapshot.pricing_mode==='inclusive'?'Tax included':'Tax'}</Text><Text style={s.receiptStrong}>{created.currency||'UNSPECIFIED'} {Number(created.tax).toFixed(2)}</Text></View>:null}
+          <View style={[s.receiptTotalRow,s.receiptGrandTotal]}><Text style={s.receiptGrandText}>Total</Text><Text style={s.receiptGrandText}>{(created.currency||"UNSPECIFIED")+" "+Number(created.total||0).toFixed(2)}</Text></View>
         </View>
 
         {successGarments.length?<View style={s.receiptSectionFull}>
@@ -370,11 +380,13 @@ export default function WalkIn(){
             <View style={{flex:1}}><Text style={s.sn}>{l.service_name}</Text><Text style={s.lineMeta}>{"$"+l.unit_price.toFixed(2)+" / "+l.unit_label}</Text></View>
             <View style={s.qty}><Pressable onPress={()=>adjust(i,-1)} style={s.iconBtn}><Minus size={16} color={colors.ink}/></Pressable><Text style={s.qtyText}>{l.quantity}</Text><Pressable onPress={()=>adjust(i,1)} style={s.iconBtn}><Plus size={16} color={colors.ink}/></Pressable><Pressable onPress={()=>remove(i)} style={s.trash}><Trash size={17} color={colors.danger}/></Pressable></View>
           </View>)}
-          <View style={s.total}><Text style={s.totalLabel}>Estimated total</Text><Text style={s.totalText}>{"$"+(total+deliveryFee).toFixed(2)}</Text></View>{deliveryFee>0?<Text style={s.helper}>{"Includes $"+deliveryFee.toFixed(2)+" delivery fee."}</Text>:null}
+          <View style={s.total}><Text style={s.totalLabel}>Estimated total</Text><Text style={s.totalText}>{taxBusy?"Calculating…":currency+" "+Number(orderTotal).toFixed(2)}</Text></View>{deliveryFee>0?<Text style={s.helper}>{"Includes $"+deliveryFee.toFixed(2)+" delivery fee."}</Text>:null}
+          {taxEstimate?.tax_snapshot?<Text style={s.helper}>{taxEstimate.tax_snapshot.pricing_mode==='inclusive'?'Tax included':'Tax added'}: {currency} {Number(taxEstimate.tax).toFixed(2)}</Text>:null}
+          {taxError?<><Text accessibilityRole="alert" style={s.err}>{taxError}</Text><Pressable accessibilityRole="button" onPress={()=>setTaxRetry(v=>v+1)}><Text>Retry tax estimate</Text></Pressable></>:null}
           {capabilities.offers_enabled?<><Text style={s.smallLabel}>PROMO CODE</Text><View style={s.customerSearchRow}><TextInput style={s.customerSearchInput} placeholder="Promo code" value={promoCode} onChangeText={v=>{setPromoCode(v.toUpperCase());setPromoDiscount(0);setPromoMessage("");}} autoCapitalize="characters"/><Pressable style={s.searchCustomerBtn} onPress={applyPromo}><Text style={s.searchCustomerText}>Apply</Text></Pressable></View>{promoMessage?<Text style={s.helper}>{promoMessage+" · -$"+promoDiscount.toFixed(2)}</Text>:null}</>:null}<Text style={s.smallLabel}>PAYMENT STATUS</Text>
           <View style={s.paymentRow}>{["unpaid","partial","paid"].map(p=><Pressable key={p} onPress={()=>setPaymentStatus(p)} style={[s.payChip,paymentStatus===p&&s.payChipOn]}><Text style={[s.payText,paymentStatus===p&&s.payTextOn]}>{p[0].toUpperCase()+p.slice(1)}</Text></Pressable>)}</View>
           {err?<Text style={s.err}>{err}</Text>:null}
-          <Pressable disabled={!name.trim()||!phone.trim()||!lines.length||(needsPickup&&(!pickupDate||!pickupSlotId))||(needsDelivery&&(!deliveryDate||!deliverySlotId))||saving} style={[s.saveBtn,(!name.trim()||!phone.trim()||!lines.length||(needsPickup&&(!pickupDate||!pickupSlotId))||(needsDelivery&&(!deliveryDate||!deliverySlotId))||saving)&&{opacity:.4}]} onPress={save}><Text style={s.saveText}>{saving?"Creating…":"Create Order + Garment Barcodes"}</Text></Pressable>
+          <Pressable accessibilityRole="button" disabled={!name.trim()||!phone.trim()||!lines.length||(needsPickup&&(!pickupDate||!pickupSlotId))||(needsDelivery&&(!deliveryDate||!deliverySlotId))||saving||taxBusy||!!taxError||!taxEstimate} style={[s.saveBtn,(!name.trim()||!phone.trim()||!lines.length||(needsPickup&&(!pickupDate||!pickupSlotId))||(needsDelivery&&(!deliveryDate||!deliverySlotId))||saving||taxBusy||!!taxError||!taxEstimate)&&{opacity:.4}]} onPress={save}><Text style={s.saveText}>{saving?"Creating…":"Create Order + Garment Barcodes"}</Text></Pressable>
           <Text style={s.helper}>You can update order status and payment details after creation.</Text>
         </View>
       </View>

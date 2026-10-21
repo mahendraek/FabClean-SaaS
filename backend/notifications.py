@@ -202,7 +202,8 @@ def render(s, order, kind, payment=None):
         tax = snapshot.get("tax_snapshot") or {}
         loc = tax.get("location") or {}
         if snapshot.get("tax"):
-            text += f"\nRecorded tax: {currency} {snapshot['tax']:.2f}"
+            label = ("Tax included" if tax.get("pricing_mode") == "inclusive" else "Tax") if tax.get("engine_version") == 2 else "Recorded tax"
+            text += f"\n{label}: {currency} {snapshot['tax']:.2f}"
         if loc:
             text += "\nService location: " + ", ".join(str(loc.get(k) or "") for k in ("city", "state", "postal_code", "country") if loc.get(k))
         for entry in tax.get("breakdown", []):
