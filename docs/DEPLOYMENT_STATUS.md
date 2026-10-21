@@ -2,7 +2,26 @@
 
 Updated: 21 October 2026.
 
-## Current live release — PR #14 store tax policies
+## Current live release — PR #15 order-summary tax display
+
+The user explicitly approved merge and deployment on 21 October 2026. PR #15 merged at `6b556b11a9f94b20fdbaf4036240265616b0943d`, with the same application tree as validated head `7d5821e8f84f3cab470d3eeeb3400b9ad7dfc8eb`. Both accepted-head hosted validation runs passed: `39561125519` and `39561120556`. Local validation passed 46 frontend unit tests, TypeScript, 33-route export and the expanded desktop/mobile real-API tax browser suite.
+
+Authenticated Render API confirms both services **live** at the approved merge:
+
+| Service | Live deployment | Finished (India time) |
+| --- | --- | --- |
+| API | `dep-dbc6mdmi0phs73aiv440` | 2026-10-21 13:06:27 IST |
+| WEB | `dep-dbc6mdjrjlhs73b188b0` | 2026-10-21 13:07:39 IST |
+
+All **18 public smoke checks passed**: PostgreSQL health; retained tax, reporting and printing OpenAPI routes; protected read and estimate boundaries; trusted/untrusted CORS; homepage, taxes, reports, hardware, print-preview, walk-in and order-detail HTML; fresh JavaScript retrieval; and published dedicated tax/total summary rows and accessible quantity controls.
+
+Signed-in **desktop and mobile** checks against the published application selected TEST Wash & Fold in CleanAndDry's Schaumburg store and verified USD 0.13 tax, USD 2.63 estimated total and the TEST ONLY synthetic 5% label in the order summary. No order, payment, customer, service or policy was created/changed by verification. The separately user-authorized synthetic test policy remains enabled only for the three labelled TEST services; it is not verified legal tax guidance. Existing invoices retain their saved amounts.
+
+Service configuration, credentials, automatic-deployment-off settings and cloud environment settings were preserved. This documentation-only follow-up does not redeploy the application.
+
+Web: https://fabclean-saas-web.onrender.com/walk-in
+
+## Previous release — PR #14 store tax policies
 
 The user explicitly authorized merge and deployment on 21 October 2026. PR #14 merged at `f0c813a2f54c8625d208dc200c145c3a1196e66a`. Its tree exactly matches accepted head `09c0c641fc68fecda3b796fe512c3ccc18fdea5c`. Both exact-head hosted validation runs passed: [38831836043](https://github.com/mahendraek/FabClean-SaaS/actions/runs/38831836043) and [38831832124](https://github.com/mahendraek/FabClean-SaaS/actions/runs/38831832124). The full local gate previously passed 180 backend tests without skips, 46 frontend tests, TypeScript, 33 exported routes, ten desktop/mobile browser suites and zero-error load checks. Post-merge hosted run `39557129790` was still running when release evidence was recorded; it is separate from the passed accepted-head checks.
 
