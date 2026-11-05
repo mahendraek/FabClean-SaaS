@@ -54,3 +54,5 @@ Migration/rollback: no migration is performed. Future implementation must map le
 Validation: read-only source/test review, detailed in [the audit](TENANT_MANAGEMENT_AUDIT.md). No live security or regression run was performed. See [requirements and acceptance scenarios](TENANT_MANAGEMENT_REQUIREMENTS.md).
 
 Approval/release: user requested audit and documentation only on 5 November 2026. No new feature code, production configuration, database changes, merge or deployment is included.
+
+Documentation publication: [PR #16](https://github.com/mahendraek/FabClean-SaaS/pull/16), awaiting review. Future implementation checklist: [issue #17](https://github.com/mahendraek/FabClean-SaaS/issues/17). Publication does not approve the proposed design or implementation.

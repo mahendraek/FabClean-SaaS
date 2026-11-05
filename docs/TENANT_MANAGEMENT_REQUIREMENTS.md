@@ -2,6 +2,8 @@
 
 Date: 5 November 2026. Status: proposed design documenting the user's requirements; implementation is not authorized by this document. Application code, live data, branding and configuration remain unchanged.
 
+Documentation review: [PR #16](https://github.com/mahendraek/FabClean-SaaS/pull/16) · Future feature tracking: [issue #17](https://github.com/mahendraek/FabClean-SaaS/issues/17). Status: published for review, not merged; implementation remains unstarted.
+
 Read with [the source audit](TENANT_MANAGEMENT_AUDIT.md) and [DD-002](DESIGN_DECISIONS.md#dd-002--brand-as-tenant-with-licensed-stores-and-delegated-branding). Existing capabilities must be reused where suitable; the proposed screens and policies below are not claims of delivered behavior.
 
 ## 1. Business scenario and vocabulary

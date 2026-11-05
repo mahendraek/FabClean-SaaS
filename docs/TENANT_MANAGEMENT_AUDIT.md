@@ -2,6 +2,8 @@
 
 Date: 5 November 2026. Scope: read-only source review of FabClean-SaaS checkout `42d397f32052d7ff6f668fee6cd97ec3eb613f6b`, plus the existing decision-log working file. This is a documentation-only assessment, not a production security certification. No live database, permissions, subscriptions, branding, environment settings, or application code were changed. Tests were inspected, not executed or newly claimed as passing.
 
+Documentation review: [PR #16](https://github.com/mahendraek/FabClean-SaaS/pull/16) · Future feature tracking: [issue #17](https://github.com/mahendraek/FabClean-SaaS/issues/17). Status: published for review, not merged; implementation remains unstarted.
+
 The requested scenario and proposed implementation requirements are in [Tenant management requirements](TENANT_MANAGEMENT_REQUIREMENTS.md). Decision reasoning is recorded as DD-002 in [Design decisions](DESIGN_DECISIONS.md).
 
 ## Findings and existing evidence
@@ -58,4 +60,4 @@ These tests are useful starting points, not substitute evidence for a new multi-
 
 ## Delivery boundaries
 
-No implementation or numbered PR is assigned by this document. Proposed feature groups and acceptance criteria are in the requirements document. Detailed schema/endpoint designs and security review remain implementation prerequisites; live deployment verification and a full dynamic penetration review were outside this source audit.
+No implementation PR is assigned by this document. Proposed feature groups and acceptance criteria are in the requirements document. Detailed schema/endpoint designs and security review remain implementation prerequisites; live deployment verification and a full dynamic penetration review were outside this source audit.
