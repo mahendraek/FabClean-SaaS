@@ -1,9 +1,11 @@
 # FabClean development tracker
 
-Updated: 21 October 2026. This is the canonical work queue for `mahendraek/FabClean-SaaS`.
+Updated: 5 November 2026. This is the canonical work queue for `mahendraek/FabClean-SaaS`.
 Develop one item at a time. Keep future scopes in the backlog; do not implement or merge another roadmap PR as part of the current item.
 
 ## Current work
+
+**Tenant administration audit and requirements (5 November 2026):** documentation only, explicitly requested by the user. Reviewed current source/tests for platform onboarding, three-store capacity, memberships, RLS, configuration inheritance, reports and branding UI. Recorded existing capabilities versus gaps, SuperAdmin/Brand Admin responsibilities, safe logo/theme self-service, proposed SaaS lifecycle and acceptance scenarios. Documentation publication/tracking authorized on 5 November 2026. No implementation, live changes, tests executed, merge or deployment. See [source audit](TENANT_MANAGEMENT_AUDIT.md), [requirements](TENANT_MANAGEMENT_REQUIREMENTS.md) and DD-002 in [design decisions](DESIGN_DECISIONS.md).
 
 **PR #15 merged and deployed (21 October 2026):** explicit user approval; merge `6b556b11a9f94b20fdbaf4036240265616b0943d` is live on both Render services. Both accepted-head hosted checks passed (`39561125519`, `39561120556`), all 18 public smoke checks passed, and signed-in desktop/mobile production checks verified TEST Wash & Fold shows USD 0.13 tax, USD 2.63 total and the TEST ONLY 5% component in the selection summary. No orders, payments or policy changes were made by release verification. See [release evidence](DEPLOYMENT_STATUS.md). Earlier correction notes describe pre-release status.
 
